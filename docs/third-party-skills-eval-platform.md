@@ -428,16 +428,17 @@ confidence = available_weight / total_weight
 
 MVP 页面建议：
 
-1. Overview：系统整体运营指标、风险分布、Top 10 Skills by Category。
+1. Overview：Skills 总数、已评测 Skills 数、评测任务数量、用户数量、Top 10 Skills by Category。
 2. Skills 管理：skill 列表、上传入口、版本、导入状态、分类、最近分数。
 3. Skill Detail：版本时间线、四阶段指标、findings、评测集、runs、artifacts。
 4. 评测任务管理：任务队列、运行状态、报告、失败原因、任务详情复核。
+5. 系统设置：runner、model、category、scoring weights。
 
 重要体验原则：
 
 - 首页不要做运维控制台，重点是“哪些 skill 值得看、为什么、风险是什么”。
 - Skill detail 要先展示版本与结论，再进入底层证据。
-- Overview 是所有角色都能看的公共页，只保留系统整体运营情况和榜单；榜单区域必须显示样本数、confidence、最近评测时间，避免伪精确排名。
+- Overview 是所有角色都能看的公共页，只保留系统整体运营情况和榜单；榜单默认展示 `Data & Analytics` category，默认按 `overall_score` 排名，并显示样本数、confidence、最近评测时间，避免伪精确排名。
 
 ## 9. 数据与产物目录建议
 
@@ -495,15 +496,25 @@ data/
 - 大规模分布式调度。
 - 自动修复并提交 PR。
 
-## 11. 待对齐问题
+## 11. 已确认决策与待对齐问题
+
+已确认：
+
+1. 用户角色分为 Skills 选型/使用用户、测试人员、平台运营人员。
+2. Overview 只展示 Skills 总数、已评测 Skills 数、评测任务数量、用户数量，以及 Top 10 Skills by Category。
+3. Top 10 默认展示 `Data & Analytics` category，默认按 `overall_score` 排名。
+4. Skills 管理是第一优先级页面，但不是首页。
+5. Evaluation Sets 归属 Skill Detail，不做一级菜单。
+6. Review 只作为 Run Detail tab，不做一级菜单。
+7. 系统设置 MVP 只保留 runner、model、category、scoring weights。
+
+仍需对齐：
 
 1. 平台是否默认允许跑不安全 skill 的动态评测？建议默认不允许，需手动 override。
-2. 综合分是否要作为主入口？建议展示，但榜单同时显示四阶段分和 confidence。
-3. 评测集是否需要独立一级菜单？建议不需要，入口归属 Skill Detail；skill-owned suite 为主，category suite 用于横向排名。
-4. 是否需要支持 OpenAI/Codex/Claude 多 runner？建议数据模型先支持，MVP 可以只实现一个 runner。
-5. 静态扫描的 critical finding 是否直接阻断榜单？建议阻断默认推荐，但保留风险榜/诊断页。
-6. 触发优化建议是否由平台生成新 skill version？建议先生成 proposal，不自动覆盖。
-7. LLM judge 是否可用于榜单？建议可以用，但必须标注 judge model、rubric、sample size 和人工复核状态。
+2. 静态扫描的 critical finding 是否直接阻断榜单？建议阻断默认推荐，但保留风险榜/诊断页。
+3. 是否需要支持 OpenAI/Codex/Claude 多 runner？建议数据模型先支持，MVP 可以只实现一个 runner。
+4. 触发优化建议是否由平台生成新 skill version？建议先生成 proposal，不自动覆盖。
+5. LLM judge 是否可用于榜单？建议可以用，但必须标注 judge model、rubric、sample size 和人工复核状态。
 
 ## 12. 参考实现来源
 

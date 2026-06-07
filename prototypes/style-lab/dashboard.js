@@ -52,7 +52,7 @@ function renderNav() {
       <a class="nav-item active" href="#">${icon("layout-dashboard")}概览</a>
       <a class="nav-item" href="#">${icon("boxes")}Skills 管理</a>
       <a class="nav-item" href="#">${icon("clipboard-check")}评测任务管理</a>
-      <a class="nav-item" href="#">${icon("settings")}设置</a>
+      <a class="nav-item" href="#">${icon("settings")}系统设置</a>
     </nav>
     <div class="side-block">
       <h3>Freshness</h3>
@@ -116,10 +116,10 @@ function renderApp() {
         </header>
 
         <section class="stat-grid">
-          <div class="stat"><span>Evaluated Skills</span><strong>128</strong><small>24 categories covered</small></div>
-          <div class="stat"><span>Complete Reports</span><strong>87</strong><small>four-stage reports ready</small></div>
-          <div class="stat"><span>Category Coverage</span><strong>76%</strong><small>18 of 24 have ready benchmark</small></div>
-          <div class="stat"><span>Avg Confidence</span><strong>91%</strong><small>sample size and freshness weighted</small></div>
+          <div class="stat"><span>Skills 总数</span><strong>186</strong><small>覆盖 12 个推荐分类</small></div>
+          <div class="stat"><span>已评测 Skills 数</span><strong>128</strong><small>完成四阶段报告</small></div>
+          <div class="stat"><span>评测任务数量</span><strong>342</strong><small>含历史任务和复评任务</small></div>
+          <div class="stat"><span>用户数量</span><strong>48</strong><small>选型用户、测试人员、运营人员</small></div>
         </section>
 
         <section class="overview-board">
@@ -127,7 +127,7 @@ function renderApp() {
             <div class="panel-header">
               <div>
                 <h2>Top 10 Skills by Category</h2>
-                <p>Data & Analytics category · public overview ranking · updated 09:20</p>
+                <p>Data & Analytics category · ranked by overall_score · updated 09:20</p>
               </div>
               <span class="pill">${icon("badge-check")}sample size 42 · confidence 91%</span>
             </div>

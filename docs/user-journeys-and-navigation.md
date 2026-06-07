@@ -125,7 +125,7 @@
 - 评测任务管理 / Runs Queue
 - Overview / Data Quality
 - Overview / Reports
-- Settings / Policies
+- 系统设置 / Policies
 
 成功标准：
 
@@ -151,7 +151,25 @@
 
 - 展示 `Top 10 Skills by Category`。
 - 每个 category 只展示当前排名前 10 的 skills。
+- Top 10 默认按 `overall_score` 排名。
 - Skill card 显示综合分、四阶段分、confidence、最近评测时间、关键风险。
+
+推荐第一批 category：
+
+| Category | 中文名 | 典型 skills |
+| --- | --- | --- |
+| Data & Analytics | 数据分析 | CSV/Excel 分析、指标归因、数据摘要、报表生成 |
+| Documents & Knowledge | 文档与知识 | PDF/Word 处理、知识库问答、合同/报告解析 |
+| Developer Tools | 开发工具 | 代码审查、测试生成、PR 分析、依赖检查 |
+| Research & Web | 研究与检索 | 市场研究、网页调研、资料汇总、竞品分析 |
+| Productivity & Office | 办公生产力 | PPT 生成、会议纪要、邮件草稿、任务整理 |
+| Design & Media | 设计与多媒体 | 图片标注、设计检查、素材整理、alt text |
+| Customer Support & CRM | 客服与客户管理 | 工单分类、客户摘要、回复建议、满意度分析 |
+| DevOps & Cloud | 运维与云服务 | 日志分析、部署检查、云资源巡检、告警归因 |
+| Security & Compliance | 安全与合规 | 权限审查、敏感信息扫描、策略检查、审计辅助 |
+| Finance & Business | 财务与商业 | 财务表格、商业分析、预算说明、经营摘要 |
+| Education & Training | 教育与培训 | 课件生成、学习材料整理、练习题生成 |
+| Communication & Collaboration | 沟通协作 | Slack/飞书摘要、跨团队同步、项目周报 |
 
 ### 3.2 上传一个 skill 版本
 
@@ -349,7 +367,7 @@
 Overview
 Skills Management
 Evaluation Task Management
-Settings
+System Settings
 ```
 
 对应中文：
@@ -358,7 +376,7 @@ Settings
 概览
 Skills 管理
 评测任务管理
-设置
+系统设置
 ```
 
 设计理由：
@@ -366,7 +384,7 @@ Skills 管理
 - `Overview` 是所有角色都能看的公共首页，只承接系统整体运营指标和 Top 10 Skills by Category。
 - `Skills 管理` 是上传、版本、详情、报告、评测集管理的主入口。
 - `评测任务管理` 承载任务队列、历史运行、失败状态、运行配置和任务详情里的复核能力。
-- `Settings` 只放 runner、model、policy、category 等配置，不要压到主流程里。
+- `系统设置` 只放 runner、model、category、scoring weights 等配置，不要压到主流程里。
 
 ### 5.2 推荐信息架构
 
@@ -397,11 +415,10 @@ Evaluation Task Management
   - Review
   - Runner Logs
 
-Settings
+System Settings
   - Runner Adapters
   - Models
   - Categories
-  - Risk Policies
   - Scoring Weights
   - Export
 ```
@@ -472,23 +489,15 @@ Review
 首页不建议做操作密集型 dashboard，也不放评测任务管理内容。建议做“系统整体运营情况 + Top 10 Skills by Category”：
 
 1. 顶部结论区：
-   - Evaluated Skills
-   - Categories Covered
-   - Complete Reports
-   - Review Required
-2. Category Coverage：
-   - 每个 category 的 skill 数、ready suite 数、last evaluated、confidence。
-3. Top 10 Skills by Category：
+   - Skills 总数
+   - 已评测 Skills 数
+   - 评测任务数量
+   - 用户数量
+2. Top 10 Skills by Category：
+   - 默认展示 `Data & Analytics` category
    - 每个 category 展示排名前 10 的 skills
+   - 默认按 `overall_score` 排名
    - 显示 overall、四阶段分、confidence、最近评测时间、关键风险
-4. Risk Highlights：
-   - Critical findings
-   - Over-permissioned skills
-   - External endpoint risks
-5. Freshness：
-   - 过期评测
-   - 需要复评的 suite
-   - runner telemetry 缺失的 runs
 
 首页应避免：
 
@@ -506,7 +515,7 @@ Review
 - 概览
 - Skills 管理
 - 评测任务管理
-- 设置
+- 系统设置
 
 不推荐：
 
@@ -559,7 +568,7 @@ Run 状态：
 
 - Review 作为 Run Detail 里的 tab，不作为一级菜单。
 - 榜单能力合入 Overview，先只做 `Top 10 Skills by Category`。
-- Settings 只保留 runner、model、category、scoring weights。
+- 系统设置只保留 runner、model、category、scoring weights。
 
 不建议第一阶段做：
 
@@ -568,16 +577,15 @@ Run 状态：
 - public marketplace 发布。
 - 大量自定义 dashboard。
 
-## 9. 对齐建议
+## 9. 已确认决策
 
-建议下一步先定三个产品判断：
+当前已确认：
 
-1. 目标主用户优先级：先服务 Skills 选型/使用用户，还是先服务测试人员？
-2. `Overview` 是否只保留系统整体运营指标和 `Top 10 Skills by Category`？
-3. `Review` 是否长期只作为 Run Detail tab，而不独立成一级菜单？
-
-我的建议是：
-
-- MVP 以 Skills 选型/使用用户和测试人员为第一优先级。
-- `Overview` 只保留系统整体运营指标和 `Top 10 Skills by Category`。
+- 用户角色分为 Skills 选型/使用用户、测试人员、平台运营人员。
+- `Overview` 是所有角色都能看的公共首页，只保留系统整体运营指标和 `Top 10 Skills by Category`。
+- 首页顶部指标保留 Skills 总数、已评测 Skills 数、评测任务数量、用户数量。
+- `Top 10 Skills by Category` 默认展示 `Data & Analytics`，默认按 `overall_score` 排名。
+- `Skills 管理` 是第一优先级页面，但不是首页。
+- `Evaluation Sets` 归属 Skill Detail，不做一级菜单。
 - Review 保持在 Run Detail 内，不做一级菜单。
+- `系统设置` MVP 只保留 runner、model、category、scoring weights。
