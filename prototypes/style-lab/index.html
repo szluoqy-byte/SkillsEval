@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SkillsEval Style Lab</title>
+    <link rel="stylesheet" href="./shared.css">
+    <style>
+      body {
+        --page: #f5f6f8;
+        --panel: #ffffff;
+        --surface: #f0f3f7;
+        --text: #172032;
+        --muted: #687388;
+        --line: #dfe5ee;
+        --button: #ffffff;
+        --button-text: #172032;
+        --primary: #172032;
+        --primary-text: #ffffff;
+        --radius: 8px;
+      }
+
+      .lab-header {
+        padding: 28px 28px 8px;
+      }
+
+      .lab-header h1 {
+        margin: 0;
+        font-size: 34px;
+      }
+
+      .lab-header p {
+        margin: 8px 0 0;
+        max-width: 760px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="lab-header">
+      <h1>SkillsEval Style Lab</h1>
+      <p>四个临时高保真方向使用同一套信息架构：概览、Skills 管理、评测任务管理、设置。重点比较视觉气质、密度、榜单呈现和评测证据的可读性。</p>
+    </header>
+    <main class="preview-grid">
+      <section class="preview-card">
+        <iframe src="./civic-ledger.html" title="Civic Ledger"></iframe>
+        <div class="preview-meta">
+          <h2>Civic Ledger</h2>
+          <p>偏第三方报告/榜单平台，沉稳、可信、适合对外呈现 Top 10 与证据摘要。</p>
+          <a class="btn primary" href="./civic-ledger.html">打开完整页</a>
+        </div>
+      </section>
+      <section class="preview-card">
+        <iframe src="./command-graph.html" title="Command Graph"></iframe>
+        <div class="preview-meta">
+          <h2>Command Graph</h2>
+          <p>深色技术控制台，信息密度最高，更适合测试人员管理任务和 runner 结果。</p>
+          <a class="btn primary" href="./command-graph.html">打开完整页</a>
+        </div>
+      </section>
+      <section class="preview-card">
+        <iframe src="./product-cloud.html" title="Product Cloud"></iframe>
+        <div class="preview-meta">
+          <h2>Product Cloud</h2>
+          <p>明亮 SaaS 产品风格，容易落地为第一版 Web app，也比较适合多人协作。</p>
+          <a class="btn primary" href="./product-cloud.html">打开完整页</a>
+        </div>
+      </section>
+      <section class="preview-card">
+        <iframe src="./operator-atlas.html" title="Operator Atlas"></iframe>
+        <div class="preview-meta">
+          <h2>Operator Atlas</h2>
+          <p>更强品牌感和榜单策展感，适合强调独立评测平台的“权威列表”。</p>
+          <a class="btn primary" href="./operator-atlas.html">打开完整页</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
