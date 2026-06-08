@@ -44,8 +44,8 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 ## 3. 设计原则
 
 1. 从浅到深：先静态，再触发，再效果，最后性能，避免在明显不安全或不可评测的 skill 上浪费运行成本。
-2. 证据优先：每个结论必须能落到 finding、assertion、transcript、output artifact、tool call 或 timing 上。
-3. 与 agent 解耦：通过 runner adapter 支持不同 agent CLI/API，平台保留统一的 run/result schema。
+2. 证据优先：每个结论必须能落到 finding、assertion、transcript、output、tool call 或 timing 等评测证据上。
+3. 与 agent 解耦：通过评测执行器 runner 支持不同 agent CLI/API，平台保留统一的 run/result schema。
 4. Skill 与评测集解耦但入口归属 Skill：skill 可以不自带 eval；平台应能在 Skill Detail 下生成、导入、维护版本化评测集。
 5. 对照实验优先：效果评测默认比较 with-skill、without-skill，必要时比较 old-skill、new-skill。
 6. 版本与分类是横切能力：同一 skill 的版本回归、同一 category 下的横向 benchmark 都应基于同一套证据。
@@ -60,6 +60,7 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 关键字段：
 
 - `id`
+- `package_name`
 - `name`
 - `description`
 - `category`
@@ -67,6 +68,11 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 - `owner`
 - `latest_version_id`
 - `created_at`
+
+说明：
+
+- Skill 的唯一身份按 `package_name` 识别；同一个 `package_name` 下可以有多个 Skill Version。
+- `category` 在上传 skill 时由用户人工选择，平台后续可以提供推荐，但不自动覆盖人工选择。
 
 ### 4.2 Skill Version
 
@@ -129,7 +135,7 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 - `id`
 - `skill_version_id`
 - `eval_suite_version_id`
-- `runner`
+- `runner`: 评测执行器，例如本地 CLI runner、Codex runner、Claude Code runner、API runner。
 - `model`
 - `run_config`
 - `status`
@@ -138,13 +144,13 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 - `result_summary`
 - `artifact_root`
 
-### 4.6 Finding / Metric / Artifact
+### 4.6 Finding / Metric / Evidence
 
 平台报告不只保存分数，还要保存证据：
 
 - Finding：静态扫描问题，含 severity、code、file、line、fix。
-- Metric：可聚合的指标值，含 metric key、value、unit、confidence。
-- Artifact：运行证据，含 transcript、outputs、grading.json、metrics.json、timing.json、benchmark.json、review feedback。
+- Metric：可聚合的指标值，含 metric key、value、unit。
+- Evidence：评测证据/运行产物，含 transcript、outputs、grading.json、metrics.json、timing.json、benchmark.json、review feedback。工程字段仍可使用 `artifact_root`，但用户界面建议显示为“评测证据”。
 
 ## 5. 四类评测指标体系
 
@@ -249,7 +255,7 @@ trigger_score = weighted_mean(recall, precision, silence_rate, stability)
 | Skill Lift | skill 带来的净提升 | with_skill pass_rate - without_skill pass_rate | benchmark |
 | Baseline Advantage | 相比无 skill 是否显著更好 | 多轮运行均值差、置信区间、显著性标签 | benchmark |
 | Process Quality | 工具使用路径是否合理 | tool call rubric、必要文件读取、无无效步骤 | transcript、metrics |
-| Artifact Correctness | 产物是否正确可用 | 文件存在、格式合法、内容校验、截图/渲染验证 | outputs |
+| Output Correctness | 输出/文件是否正确可用 | 文件存在、格式合法、内容校验、截图/渲染验证 | outputs |
 | Style / Contract Fit | 输出格式是否符合要求 | JSON schema、markdown/table/style assertions | outputs |
 | Evidence Quality | 评分证据是否充分 | expectation evidence 覆盖率、claims verified rate | grading.json |
 | Eval Quality | eval 本身是否可靠 | assertion 区分度、过宽/过窄提示、flaky case 比例 | eval feedback |
@@ -260,7 +266,7 @@ trigger_score = weighted_mean(recall, precision, silence_rate, stability)
 effect_score = 0.45 * outcome
              + 0.25 * normalized_skill_lift
              + 0.15 * process_quality
-             + 0.10 * artifact_correctness
+             + 0.10 * output_correctness
              + 0.05 * evidence_quality
 ```
 
@@ -353,11 +359,7 @@ overall_score = static_score * 0.20
 - 效果评测最能体现 skill 价值，因此权重最高。
 - 性能评测影响推荐级别和生产可用性，但不应压过安全与效果。
 
-如果某阶段缺失，平台不应简单重分配权重，而应输出 `confidence`：
-
-```text
-confidence = available_weight / total_weight
-```
+如果某阶段缺失，平台不应简单重分配权重。MVP 暂不展示 `confidence`，只展示已完成阶段、缺失阶段和最近评测时间。
 
 示例：
 
@@ -377,7 +379,7 @@ confidence = available_weight / total_weight
 
 强制降级规则：
 
-- 任一 critical security finding：最高不超过 C，并标记 `blocked_for_default_run`。
+- 任一 critical security finding：最高不超过 C，并显示关键风险标签；MVP 不直接阻断进入榜单。
 - trigger precision 或 recall 低于 60：最高不超过 C。
 - effect skill lift 小于 0：最高不超过 D。
 - performance Pareto worse 且无明显质量提升：最高不超过 C。
@@ -430,15 +432,15 @@ MVP 页面建议：
 
 1. Overview：Skills 总数、已评测 Skills 数、评测任务数量、用户数量、Top 10 Skills by Category。
 2. Skills 管理：skill 列表、上传入口、版本、导入状态、分类、最近分数。
-3. Skill Detail：版本时间线、四阶段指标、findings、评测集、runs、artifacts。
-4. 评测任务管理：任务队列、运行状态、报告、失败原因、任务详情复核。
-5. 系统设置：runner、model、category、scoring weights。
+3. Skill Detail：版本时间线、四阶段指标、findings、评测集、runs、评测证据。
+4. 评测任务管理：任务队列、运行状态、报告、任务详情复核。
+5. 系统设置：评测执行器 runner、model、category、scoring weights。
 
 重要体验原则：
 
 - 首页不要做运维控制台，重点是“哪些 skill 值得看、为什么、风险是什么”。
 - Skill detail 要先展示版本与结论，再进入底层证据。
-- Overview 是所有角色都能看的公共页，只保留系统整体运营情况和榜单；榜单默认展示 `Data & Analytics` category，默认按 `overall_score` 排名，并显示样本数、confidence、最近评测时间，避免伪精确排名。
+- Overview 是所有角色都能看的公共页，只保留系统整体运营情况和榜单；榜单默认展示 `Data & Analytics` category，默认按 `overall_score` 排名，并显示四阶段分、关键风险和最近评测时间。
 
 ## 9. 数据与产物目录建议
 
@@ -472,7 +474,7 @@ data/
 - `report.md`: 人类可读摘要。
 - `findings.json`: 静态扫描 findings。
 - `benchmark.json`: 多轮运行聚合。
-- `artifacts.zip`: 完整证据包。
+- `artifacts.zip`: 完整评测证据包。
 
 ## 10. MVP 范围
 
@@ -506,15 +508,19 @@ data/
 4. Skills 管理是第一优先级页面，但不是首页。
 5. Evaluation Sets 归属 Skill Detail，不做一级菜单。
 6. Review 只作为 Run Detail tab，不做一级菜单。
-7. 系统设置 MVP 只保留 runner、model、category、scoring weights。
+7. Skill 唯一身份按 `package_name` 识别。
+8. 上传 skill 时由用户人工选择 `category`。
+9. critical finding 不直接阻断进入榜单，但必须显示关键风险。
+10. MVP 暂不展示 `confidence`。
+11. 用户界面使用“评测证据/运行产物”，不直接使用 Artifact 作为主展示词。
+12. runner 指评测执行器；系统设置 MVP 只保留评测执行器 runner、model、category、scoring weights。
+13. MVP 暂不设计系统失败处理，后续再补充。
 
 仍需对齐：
 
 1. 平台是否默认允许跑不安全 skill 的动态评测？建议默认不允许，需手动 override。
-2. 静态扫描的 critical finding 是否直接阻断榜单？建议阻断默认推荐，但保留风险榜/诊断页。
-3. 是否需要支持 OpenAI/Codex/Claude 多 runner？建议数据模型先支持，MVP 可以只实现一个 runner。
-4. 触发优化建议是否由平台生成新 skill version？建议先生成 proposal，不自动覆盖。
-5. LLM judge 是否可用于榜单？建议可以用，但必须标注 judge model、rubric、sample size 和人工复核状态。
+2. 触发优化建议是否由平台生成新 skill version？建议先生成 proposal，不自动覆盖。
+3. LLM judge 是否可用于榜单？建议可以用，但必须标注 judge model、rubric、sample size 和人工复核状态。
 
 ## 12. 参考实现来源
 

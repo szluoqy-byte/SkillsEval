@@ -82,9 +82,9 @@
 - Skill Detail / Evaluation Sets
 - Evaluation Runs
 - Eval Case Editor
-- Artifacts
+- 评测证据
 - Run Detail / Review
-- Runner Config
+- 评测执行器配置
 
 成功标准：
 
@@ -112,8 +112,8 @@
 - 当前平台覆盖哪些 skill category？
 - 哪些 category 缺少可靠 benchmark？
 - 哪些榜单可以公开展示？
-- 哪些评测结果过期、置信度不足或需要复评？
-- 哪些 skill 有 critical risk，不适合推荐？
+- 哪些评测结果过期或需要复评？
+- 哪些 skill 有 critical risk，需要在榜单中显著标注？
 - 安全合格但效果差的 skill 是否应进入推荐？
 
 关键页面：
@@ -130,8 +130,8 @@
 成功标准：
 
 - 能维护“可信榜单”而不是静态排行。
-- 能看到 freshness、coverage、confidence。
-- 能发现缺 eval、缺 runner telemetry、缺复核的类别。
+- 能看到 freshness、coverage。
+- 能发现缺 eval、缺运行耗时/成本数据、缺复核的类别。
 - 能用 risk status 而不是只靠总分做治理判断。
 - 能导出证据包支持审批、上架或下架决策。
 
@@ -152,7 +152,7 @@
 - 展示 `Top 10 Skills by Category`。
 - 每个 category 只展示当前排名前 10 的 skills。
 - Top 10 默认按 `overall_score` 排名。
-- Skill card 显示综合分、四阶段分、confidence、最近评测时间、关键风险。
+- Skill card 显示综合分、四阶段分、最近评测时间、关键风险。
 
 推荐第一批 category：
 
@@ -188,6 +188,8 @@
 - 上传 package / GitHub URL。
 - 解析 `SKILL.md` 与文件树。
 - 创建 Skill Version。
+- Skill 唯一身份按 `package_name` 识别。
+- 上传时人工选择 `category`。
 - 记录 source、version、hash、file tree、manifest。
 - 提示是否进入该 skill 的评测集准备或完整评测。
 
@@ -255,8 +257,8 @@
 
 平台支持：
 
-- 排名同时显示 overall、四阶段分、confidence、sample size、last evaluated。
-- 排除 blocked 或 confidence 太低的结果。
+- 排名同时显示 overall、四阶段分、sample size、last evaluated、关键风险。
+- critical finding 不直接阻断进入榜单，但必须在榜单和详情页显著展示。
 - 显示榜单使用的 benchmark suite version。
 
 ## 4. 用户旅程
@@ -310,7 +312,7 @@
   -> 编辑 Trigger Queries / Effect Cases / Rubrics
   -> Dry Run / Validate Schema
   -> Run Benchmark
-  -> Review Artifacts
+  -> Review Evidence
   -> 标记 flaky / weak assertions
   -> 发布评测集版本
 ```
@@ -325,7 +327,7 @@
 
 ```text
 进入 Overview
-  -> 查看 category coverage / freshness / confidence
+  -> 查看 category coverage / freshness
   -> 进入 Benchmark Coverage
   -> 识别缺评测或过期 category
   -> 安排复评 runs
@@ -355,7 +357,7 @@
 
 - 风险审查要与选型推荐分离。
 - 高总分不能掩盖 critical finding。
-- 审批视角要能导出 findings、报告和 artifact links。
+- 审批视角要能导出 findings、报告和评测证据链接。
 
 ## 5. 菜单目录推荐
 
@@ -384,7 +386,7 @@ Skills 管理
 - `Overview` 是所有角色都能看的公共首页，只承接系统整体运营指标和 Top 10 Skills by Category。
 - `Skills 管理` 是上传、版本、详情、报告、评测集管理的主入口。
 - `评测任务管理` 承载任务队列、历史运行、失败状态、运行配置和任务详情里的复核能力。
-- `系统设置` 只放 runner、model、category、scoring weights 等配置，不要压到主流程里。
+- `系统设置` 只放评测执行器 runner、model、category、scoring weights 等配置，不要压到主流程里。
 
 ### 5.2 推荐信息架构
 
@@ -411,12 +413,12 @@ Evaluation Task Management
   - Run Queue
   - Run History
   - Run Detail
-  - Artifacts
+  - Evidence
   - Review
   - Runner Logs
 
 System Settings
-  - Runner Adapters
+  - Evaluation Runners
   - Models
   - Categories
   - Scoring Weights
@@ -432,18 +434,18 @@ Summary
 Versions
 Evaluation
 Findings
-Artifacts
+Evidence
 Comparisons
 Evaluation Sets
 ```
 
 每个 tab 的职责：
 
-- `Summary`：结论、四阶段分、confidence、推荐状态、最近运行。
+- `Summary`：结论、四阶段分、推荐状态、最近运行。
 - `Versions`：版本列表、当前版本、版本趋势、上传来源。
 - `Evaluation`：单次 run 的四阶段报告。
 - `Findings`：静态扫描和动态运行风险。
-- `Artifacts`：transcript、outputs、grading、metrics、timing、benchmark。
+- `Evidence`：评测证据/运行产物，展示 transcript、outputs、grading、metrics、timing、benchmark。
 - `Comparisons`：版本对比、同类对比、baseline 对比。
 - `Evaluation Sets`：当前 skill 下绑定的 skill-owned suite 和 category benchmark suite。
 
@@ -472,7 +474,7 @@ Quality
 Run Summary
 Stage Results
 Case Results
-Artifacts
+Evidence
 Cost & Timing
 Errors
 Review
@@ -482,7 +484,7 @@ Review
 
 - `Stage Results` 按四阶段显示，不按 AWS/Anthropic/OpenAI provider 显示。
 - `Case Results` 支持筛选 failed、flaky、needs review。
-- `Artifacts` 必须能打开具体证据，而不是只显示 JSON 路径。
+- `Evidence` 必须能打开具体证据，而不是只显示 JSON 路径。
 
 ## 6. 首页推荐布局
 
@@ -497,7 +499,7 @@ Review
    - 默认展示 `Data & Analytics` category
    - 每个 category 展示排名前 10 的 skills
    - 默认按 `overall_score` 排名
-   - 显示 overall、四阶段分、confidence、最近评测时间、关键风险
+   - 显示 overall、四阶段分、最近评测时间、关键风险
 
 首页应避免：
 
@@ -568,7 +570,7 @@ Run 状态：
 
 - Review 作为 Run Detail 里的 tab，不作为一级菜单。
 - 榜单能力合入 Overview，先只做 `Top 10 Skills by Category`。
-- 系统设置只保留 runner、model、category、scoring weights。
+- 系统设置只保留评测执行器 runner、model、category、scoring weights。
 
 不建议第一阶段做：
 
@@ -588,4 +590,11 @@ Run 状态：
 - `Skills 管理` 是第一优先级页面，但不是首页。
 - `Evaluation Sets` 归属 Skill Detail，不做一级菜单。
 - Review 保持在 Run Detail 内，不做一级菜单。
-- `系统设置` MVP 只保留 runner、model、category、scoring weights。
+- Skill 唯一身份按 `package_name` 识别。
+- 上传 skill 时人工选择 `category`。
+- critical finding 不直接阻断进入榜单，但要显著显示关键风险。
+- MVP 暂不展示 `confidence`。
+- 用户界面使用“评测证据/运行产物”，不直接使用 Artifact 作为主展示词。
+- runner 指评测执行器，例如本地 CLI runner、Codex runner、Claude Code runner、API runner。
+- `系统设置` MVP 只保留评测执行器 runner、model、category、scoring weights。
+- MVP 暂不设计系统失败处理。
