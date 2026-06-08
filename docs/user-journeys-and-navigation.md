@@ -83,17 +83,17 @@
 - Evaluation Runs
 - Eval Case Editor
 - 评测证据
-- Run Detail / Review
+- 评测证据
 - 评测执行器配置
 
 成功标准：
 
-- 能上传一个版本并看到静态扫描结果。
+- 能上传并确认一个 Skill Version；静态扫描结果在后续评测任务中产生。
 - 能创建或生成 eval suite。
 - 能看到逐 case 失败原因和可操作改进建议。
 - 能比较新旧版本，避免只看单次分数。
 - 能版本化管理 eval suite。
-- 能追踪 prompt、files、expected output、assertions、rubrics。
+- 能追踪 `id`、`prompt`、`expected_output`、`files`、`assertions`。
 - 能把人工反馈沉淀为下一版 eval suite 或 skill 改进建议。
 
 ### 2.3 平台运营人员
@@ -180,17 +180,19 @@
 
 用户目标：
 
-- 完成 skill package / GitHub source 导入，形成可追踪的 Skill Version。
-- 看到导入状态、版本信息和下一步建议。
+- 完成 skill package 或本地/服务器路径导入，形成可追踪的 Skill Version。
+- 先看到解析结果和候选值，再确认版本信息和下一步建议。
 
 平台支持：
 
-- 上传 package / GitHub URL。
-- 解析 `SKILL.md` 与文件树。
-- 创建 Skill Version。
-- Skill 唯一身份按 `package_name` 识别。
-- 上传时人工选择 `category`。
-- 记录 source、version、hash、file tree、manifest。
+- 上传 package 或填写 local path。
+- 解析 `SKILL.md`、候选 skill root 与文件树，生成 Import Draft。
+- 用户确认或编辑 `skill_name`、`display_name`、`category`、`version` 等必填项。
+- 确认后创建 Skill Version。
+- Skill 唯一身份按 `skill_name` 识别，`skill_name` 可从 `SKILL.md` frontmatter `name` 预填，但用户可以修正。
+- `version` 必须由用户填写或确认。
+- 上传解析后人工选择 `category`。
+- 记录 source、version、manifest 和文件树摘要。
 - 提示是否进入该 skill 的评测集准备或完整评测。
 
 ### 3.3 在 Skill 下设计或生成评测集
@@ -208,7 +210,7 @@
 - 在 Skill Detail 的 `评测集` tab 中管理。
 - 从 skill description、README、scripts、examples 生成草稿。
 - 区分 positive trigger、negative trigger、hard negative。
-- 区分 deterministic assertions 与 LLM judge rubric。
+- `assertions` 采用两级判定：先走确定性规则匹配；确定性规则识别不了的，再交给 LLM Judge。
 - 保存为该 skill 绑定的评测集版本。
 
 ### 3.4 运行完整评测
@@ -308,7 +310,7 @@
 ```text
 进入 Skill Detail
   -> 打开评测集 tab
-  -> 选择 Skill-owned Suite 或 Category Benchmark Suite
+  -> 选择当前 Skill 绑定的 Evaluation Suite
   -> 编辑 Trigger Queries / Effect Cases / Rubrics
   -> Dry Run / Validate Schema
   -> Run Benchmark
@@ -321,7 +323,7 @@
 
 - Eval Suite Version 要像代码版本一样可追踪。
 - Review feedback 要能回流到下一版 eval。
-- category benchmark 的 case 数量不宜过大，优先保证可比性和复核质量。
+- Skill 绑定评测集的 case 数量不宜过大，优先保证可比性和复核质量。
 
 ### 4.3 平台运营人员旅程：从覆盖监控到榜单发布
 
@@ -385,8 +387,8 @@ Skills 管理
 
 - `Overview` 是所有角色都能看的公共首页，只承接系统整体运营指标和 Top 10 Skills by Category。
 - `Skills 管理` 是上传、版本、详情、报告、评测集管理的主入口。
-- `评测任务管理` 承载任务队列、历史运行、失败状态、运行配置和任务详情里的复核能力。
-- `系统设置` 只放评测执行器 runner、model、category、scoring weights 等配置，不要压到主流程里。
+- `评测任务管理` 是独立一级菜单，承载任务队列、历史运行、失败状态和运行配置；任务详情页展示四阶段评估方法、with-skill / without-skill 对照、findings 和评测证据。
+- `系统设置` 只放运行环境 Runner、category、scoring weights 等配置，不要压到主流程里。
 
 ### 5.2 推荐信息架构
 
@@ -412,14 +414,12 @@ Skills Management
 Evaluation Task Management
   - Run Queue
   - Run History
-  - Run Detail
   - Evidence
   - Review
   - Runner Logs
 
 System Settings
-  - Evaluation Runners
-  - Models
+  - Runner Environments
   - Categories
   - Scoring Weights
   - Export
@@ -447,7 +447,7 @@ Evaluation Sets
 - `Findings`：静态扫描和动态运行风险。
 - `Evidence`：评测证据/运行产物，展示 transcript、outputs、grading、metrics、timing、benchmark。
 - `Comparisons`：版本对比、同类对比、baseline 对比。
-- `Evaluation Sets`：当前 skill 下绑定的 skill-owned suite 和 category benchmark suite。
+- `Evaluation Sets`：当前 skill 下绑定的评测集。
 
 ### 5.4 Skill Detail > 评测集 Tab 内部结构
 
@@ -464,11 +464,11 @@ Quality
 
 设计重点：
 
-- `Trigger Queries` 要清晰区分 positive、negative、hard negative。
-- `Effect Cases` 要绑定 prompt、files、expected output、assertions。
+- `Trigger Queries` 维护 `query` 与 `should_trigger`，运行后的 trigger rate 进入任务详情。
+- `Effect Cases` 维护 `id`、`prompt`、`expected_output`、`files`、`assertions`；`assertions` 先走确定性规则匹配，识别不了再交给 LLM Judge。
 - `Quality` 展示 flaky、weak assertion、coverage gap、review feedback。
 
-### 5.5 Evaluation Run Detail 内部结构
+### 5.5 Evaluation Evidence 内部结构
 
 ```text
 Run Summary
@@ -564,13 +564,13 @@ Run 状态：
 1. Overview
 2. Skills 管理 / Skill Detail
 3. Skill Detail / Evaluation Sets / Case Editor
-4. 评测任务管理 / Run Detail
+4. Skill Detail / Evaluation Evidence
 
 第一阶段可以简化：
 
-- Review 作为 Run Detail 里的 tab，不作为一级菜单。
+- Skill Detail 不承载运行详情；评测任务管理作为独立一级菜单，Skill Detail 首页直接展示版本评测结果。
 - 榜单能力合入 Overview，先只做 `Top 10 Skills by Category`。
-- 系统设置只保留评测执行器 runner、model、category、scoring weights。
+- 系统设置只保留运行环境 Runner、category、scoring weights。
 
 不建议第一阶段做：
 
@@ -589,12 +589,26 @@ Run 状态：
 - `Top 10 Skills by Category` 默认展示 `Data & Analytics`，默认按 `overall_score` 排名。
 - `Skills 管理` 是第一优先级页面，但不是首页。
 - `Evaluation Sets` 归属 Skill Detail，不做一级菜单。
-- Review 保持在 Run Detail 内，不做一级菜单。
-- Skill 唯一身份按 `package_name` 识别。
+- Skill Detail 不承载运行详情；评测任务管理作为独立一级菜单，Skill Detail 首页直接展示版本评测结果。
+- Skill 唯一身份按 `skill_name` 识别，`skill_name` 即用户看到的 Skill 名称。
 - 上传 skill 时人工选择 `category`。
 - critical finding 不直接阻断进入榜单，但要显著显示关键风险。
 - MVP 暂不展示 `confidence`。
 - 用户界面使用“评测证据/运行产物”，不直接使用 Artifact 作为主展示词。
-- runner 指评测执行器，例如本地 CLI runner、Codex runner、Claude Code runner、API runner。
-- `系统设置` MVP 只保留评测执行器 runner、model、category、scoring weights。
+- runner 在产品层指运行环境 Runner，是执行器和被测模型的预置组合，例如 `Claude Code + MiniMax 2.7`。
+- `系统设置` MVP 只保留运行环境 Runner、category、scoring weights。
 - MVP 暂不设计系统失败处理。
+- 即使 skill 存在安全风险，平台默认仍允许动态评测；风险只影响展示和推荐解释，不阻断用户继续评测。
+- 触发优化建议只作为 suggestion / proposal 展示，不自动生成新 skill version。
+- LLM judge 结果可以进入榜单；MVP 暂不展示人工复核状态，用户主要看到分数、结论和证据。
+- 视觉与交互方向收敛为 `Product Cloud`，其他探索方向保留为历史参考，不再继续演进。
+- Skill Detail Summary 不重复展示 Evaluation Sets；每个 Skill 维护一个 Evaluation Sets，在独立 tab 中维护。
+- AWS 静态扫描规则由系统预置，只读不可修改；Evaluation Sets 中只展示规则分组和规则数量。
+- Suggestion 属于评测运行结果，不属于 Evaluation Sets 定义；Skill Detail Summary 展示当前最新版本最近一次任务产出的 suggestion。
+- Skill Detail 的版本评测结果暂不下钻。
+- 评测任务管理需要新建任务流程，但只让用户选择 Skill、版本、当前 Evaluation Sets 和运行环境 Runner；评测范围固定 Full Evaluation，不展示 Task Type、Model 或 Judge Model。
+- 任务运行中只展示状态，不展示阶段进度。
+- 任务列表保持管理效率，任务详情页承载核心评估方法与结果证据。
+- Evaluation Sets 下 Trigger Queries 与 Effect Cases 分开独立维护，分别支持辅助生成、导入、新增、编辑、删除，不做启用/禁用和版本发布。
+- Evaluation Sets 不提供默认的混合导入入口，避免一次操作同时改动 Trigger Queries 与 Effect Cases。
+- 系统设置与 Overview 暂不继续细化。

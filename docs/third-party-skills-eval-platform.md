@@ -60,7 +60,7 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 关键字段：
 
 - `id`
-- `package_name`
+- `skill_name`
 - `name`
 - `description`
 - `category`
@@ -69,9 +69,27 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 - `latest_version_id`
 - `created_at`
 
+Trigger Query 最小结构：
+
+- `query`
+- `should_trigger`
+
+Effect Case 最小结构：
+
+- `id`
+- `prompt`
+- `expected_output`
+- `files`
+- `assertions`
+
+`assertions` 是两级判定机制：
+
+1. 先执行确定性规则匹配，例如 contains、does not contain、regex、JSON schema、结构/字段检查。
+2. 确定性规则无法识别或语义判断不足时，再交给 LLM Judge，根据 rubric、expected_output 和实际输出做语义判定。
+
 说明：
 
-- Skill 的唯一身份按 `package_name` 识别；同一个 `package_name` 下可以有多个 Skill Version。
+- Skill 的唯一身份按 `skill_name` 识别；`skill_name` 就是用户在管理页看到的 Skill 名称，同一个 `skill_name` 下可以有多个 Skill Version。
 - `category` 在上传 skill 时由用户人工选择，平台后续可以提供推荐，但不自动覆盖人工选择。
 
 ### 4.2 Skill Version
@@ -85,8 +103,6 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 - `version`
 - `package_uri`
 - `manifest`
-- `skill_md_hash`
-- `file_tree_hash`
 - `import_status`
 - `static_scan_status`
 - `created_at`
@@ -94,16 +110,17 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 说明：
 
 - 所有评测运行都绑定到 `skill_version_id`，避免后续文件变化污染历史结论。
-- hash 用于判断同版本重传、重复评测和结果复用。
+- MVP 使用同一 Skill 下 `version` 唯一校验；如果 `skill_name + version` 已存在，导入确认时提示该版本已存在。
+- hash 与完整 file tree 可作为后续增强或调试信息，不作为 MVP 重复上传判断主链路。
 
 ### 4.3 Eval Suite
 
-代表某个 skill 或 category 的一组评测任务定义。
+代表某个 skill 的一组评测任务定义。评测集只绑定 Skill，不再设置 Category 级评测集。
 
 关键字段：
 
 - `id`
-- `scope`: skill、category、benchmark
+- `scope`: skill
 - `skill_id`
 - `category`
 - `name`
@@ -135,8 +152,8 @@ SkillsEval 是一个第三方独立 skills 评测与选型平台。它不替代�
 - `id`
 - `skill_version_id`
 - `eval_suite_version_id`
-- `runner`: 评测执行器，例如本地 CLI runner、Codex runner、Claude Code runner、API runner。
-- `model`
+- `runner_environment`: 平台预置运行环境，例如 `Claude Code + MiniMax 2.7`、`Codex Runner + GPT-5`。
+- `task_scope`: 系统内置为 Full Evaluation，用户不选择。
 - `run_config`
 - `status`
 - `started_at`
@@ -279,7 +296,7 @@ effect_score = 0.45 * outcome
 平台设计要点：
 
 - 效果评测默认必须跑 baseline，否则只能称为 “task score”，不能称为 “skill lift”。
-- deterministic assertions 优先，LLM judge 作为语义补充；LLM judge 结果必须保存 reasoning/evidence。
+- assertions 采用两级判定：先走确定性规则匹配；确定性规则识别不了的，再交给 LLM Judge。LLM Judge 结果必须保存 reasoning/evidence。
 - 对生成文件类任务，必须保存产物并支持人工/自动查看。
 - 平台要区分 skill 问题和 eval 问题：低分可能来自 skill 差，也可能来自 eval case 不可判定。
 
@@ -388,11 +405,19 @@ overall_score = static_score * 0.20
 
 ### 7.1 上传与导入
 
-1. 用户上传 skill package 或填写 GitHub/registry source。
-2. 平台解析 `SKILL.md`、frontmatter、文件树、脚本、引用文件。
-3. 创建 Skill 与 Skill Version。
-4. 自动运行静态扫描。
-5. 给出 import readiness，不自动强制生成动态 eval。
+1. 用户上传 skill package 或填写本地/服务器导入路径。
+2. 平台解析 `SKILL.md`、frontmatter、候选 skill root、文件树、脚本和引用文件，生成 Import Draft。
+3. 用户确认或编辑 `skill_name`、`display_name`、`category`、`version` 等必填项；其中 `version` 必须由用户最终确认。
+4. 平台创建 Skill 与 Skill Version，并冻结文件树。
+5. 给出 import readiness，不自动触发静态扫描或动态 eval；静态扫描属于后续评测任务的一部分。
+
+导入规则：
+
+- 上传解析后先展示解析结果和候选值，不直接冻结为最终版本。
+- `skill_name` 可从 `SKILL.md` frontmatter `name` 预填，但用户可以修正。
+- `version` 不可靠依赖官方结构，必须由用户填写或确认。
+- `category` 由用户人工选择，系统可以推荐但不自动覆盖。
+- 如果包内存在多个 `SKILL.md`，直接阻断导入并提示不符合单 Skill 包规范，由用户整理包结构后重新上传。
 
 ### 7.2 Eval Suite 生成与维护
 
@@ -405,7 +430,7 @@ overall_score = static_score * 0.20
 生成后必须进入 review 状态：
 
 - trigger queries 要有正样本、负样本、hard negatives。
-- functional cases 要有 prompt、files、expected output、assertions/expectations。
+- functional/effect cases 要有 `id`、`prompt`、`expected_output`、`files`、`assertions`。
 - rubrics 要区分 deterministic check 与 LLM judge。
 
 ### 7.3 动态运行
@@ -432,9 +457,9 @@ MVP 页面建议：
 
 1. Overview：Skills 总数、已评测 Skills 数、评测任务数量、用户数量、Top 10 Skills by Category。
 2. Skills 管理：skill 列表、上传入口、版本、导入状态、分类、最近分数。
-3. Skill Detail：版本时间线、四阶段指标、findings、评测集、runs、评测证据。
-4. 评测任务管理：任务队列、运行状态、报告、任务详情复核。
-5. 系统设置：评测执行器 runner、model、category、scoring weights。
+3. Skill Detail：版本评测结果、四阶段指标、findings、评测集、评测证据。
+4. 评测任务管理：独立一级菜单，集中管理任务队列、运行状态和历史任务；任务详情页承载四阶段评估方法、阶段指标、with-skill / without-skill 对照、findings 和评测证据。
+5. 系统设置：运行环境 Runner、category、scoring weights。
 
 重要体验原则：
 
@@ -507,20 +532,32 @@ data/
 3. Top 10 默认展示 `Data & Analytics` category，默认按 `overall_score` 排名。
 4. Skills 管理是第一优先级页面，但不是首页。
 5. Evaluation Sets 归属 Skill Detail，不做一级菜单。
-6. Review 只作为 Run Detail tab，不做一级菜单。
-7. Skill 唯一身份按 `package_name` 识别。
+6. Skill Detail 不承载运行详情；评测任务管理作为独立一级菜单，Skill Detail 首页直接展示版本评测结果。
+7. Skill 唯一身份按 `skill_name` 识别，`skill_name` 即用户看到的 Skill 名称。
 8. 上传 skill 时由用户人工选择 `category`。
 9. critical finding 不直接阻断进入榜单，但必须显示关键风险。
 10. MVP 暂不展示 `confidence`。
 11. 用户界面使用“评测证据/运行产物”，不直接使用 Artifact 作为主展示词。
-12. runner 指评测执行器；系统设置 MVP 只保留评测执行器 runner、model、category、scoring weights。
+12. runner 在产品层指运行环境 Runner，是执行器和被测模型的预置组合；系统设置 MVP 只保留运行环境 Runner、category、scoring weights。
 13. MVP 暂不设计系统失败处理，后续再补充。
+14. 即使 skill 存在安全风险，平台默认仍允许动态评测；风险在榜单、详情和运行报告中显著展示，不作为运行阻断条件。
+15. 触发优化建议由平台生成 suggestion / proposal，不自动创建或覆盖新的 skill version。
+16. LLM judge 结果可以进入榜单；MVP 阶段用户只看结果和相关 judge 口径，暂不引入人工复核状态。
+17. 视觉与交互方向收敛为 `Product Cloud`，其他探索方向保留为历史参考，不再继续演进。
+18. Skill Detail Summary 不重复展示 Evaluation Sets；每个 Skill 维护一个 Evaluation Sets，在独立 tab 中维护。
+19. AWS 静态扫描规则由系统预置，只读不可修改；Evaluation Sets 中只展示规则分组和规则数量。
+20. Suggestion 属于评测运行结果，不属于 Evaluation Sets 定义；Skill Detail Summary 展示当前最新版本最近一次任务产出的 suggestion。
+21. Skill Detail 的版本评测结果暂不下钻。
+22. 评测任务管理需要新建任务流程，但只让用户选择 Skill、版本、当前 Evaluation Sets 和运行环境 Runner；评测范围固定 Full Evaluation，不展示 Task Type、Model 或 Judge Model。
+23. 任务运行中只展示任务状态，不展示阶段进度。
+24. 任务列表不放报告摘要，任务详情页展示核心评估方法与结果证据。
+25. Evaluation Sets 下 Trigger Queries 与 Effect Cases 分开独立维护，分别支持辅助生成、导入、新增、编辑、删除，不做启用/禁用和版本发布。
+26. Evaluation Sets 不提供默认的混合导入入口，避免一次操作同时改动 Trigger Queries 与 Effect Cases。
+27. 系统设置与 Overview 暂不继续细化。
 
 仍需对齐：
 
-1. 平台是否默认允许跑不安全 skill 的动态评测？建议默认不允许，需手动 override。
-2. 触发优化建议是否由平台生成新 skill version？建议先生成 proposal，不自动覆盖。
-3. LLM judge 是否可用于榜单？建议可以用，但必须标注 judge model、rubric、sample size 和人工复核状态。
+status: not provided
 
 ## 12. 参考实现来源
 

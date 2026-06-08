@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SkillsEval Style Lab</title>
+    <title>SkillsEval Product Cloud Prototype</title>
     <link rel="stylesheet" href="./shared.css">
     <style>
       body {
@@ -39,26 +39,10 @@
   </head>
   <body>
     <header class="lab-header">
-      <h1>SkillsEval Style Lab</h1>
-      <p>四个临时高保真方向使用同一套信息架构：概览、Skills 管理、评测任务管理、系统设置。重点比较视觉气质、密度、榜单呈现和评测证据的可读性。</p>
+      <h1>SkillsEval Product Cloud</h1>
+      <p>Product Cloud 是当前唯一继续演进的产品方向。这个工作台保留概览、Skills 管理、绑定到 Skill 的 Evaluation Sets，以及独立的评测任务管理。</p>
     </header>
     <main class="preview-grid">
-      <section class="preview-card">
-        <iframe src="./civic-ledger.html" title="Civic Ledger"></iframe>
-        <div class="preview-meta">
-          <h2>Civic Ledger</h2>
-          <p>偏第三方报告/榜单平台，沉稳、可信、适合对外呈现 Top 10 与证据摘要。</p>
-          <a class="btn primary" href="./civic-ledger.html">打开完整页</a>
-        </div>
-      </section>
-      <section class="preview-card">
-        <iframe src="./command-graph.html" title="Command Graph"></iframe>
-        <div class="preview-meta">
-          <h2>Command Graph</h2>
-          <p>深色技术控制台，信息密度最高，更适合测试人员管理任务和执行结果。</p>
-          <a class="btn primary" href="./command-graph.html">打开完整页</a>
-        </div>
-      </section>
       <section class="preview-card">
         <iframe src="./product-cloud.html" title="Product Cloud"></iframe>
         <div class="preview-meta">
@@ -71,16 +55,24 @@
         <iframe src="./product-cloud-skills.html" title="Product Cloud Skills"></iframe>
         <div class="preview-meta">
           <h2>Product Cloud · Skills 管理</h2>
-          <p>第一优先级主流程：按 package_name 管理 skill、版本、评测集、运行记录和评测证据。</p>
+          <p>第一优先级主流程：按 skill_name 管理 skill、版本、评测集、版本评测结果和评测证据。</p>
           <a class="btn primary" href="./product-cloud-skills.html">打开完整页</a>
         </div>
       </section>
       <section class="preview-card">
-        <iframe src="./operator-atlas.html" title="Operator Atlas"></iframe>
+        <iframe src="./product-cloud-eval-sets.html" title="Product Cloud Evaluation Sets"></iframe>
         <div class="preview-meta">
-          <h2>Operator Atlas</h2>
-          <p>更强品牌感和榜单策展感，适合强调独立评测平台的“权威列表”。</p>
-          <a class="btn primary" href="./operator-atlas.html">打开完整页</a>
+          <h2>Product Cloud · Evaluation Sets</h2>
+          <p>把触发样本、效果 case、rubric 和 LLM judge 口径放进当前 Skill 绑定的可编辑工作区。</p>
+          <a class="btn primary" href="./product-cloud-eval-sets.html">打开完整页</a>
+        </div>
+      </section>
+      <section class="preview-card">
+        <iframe src="./product-cloud-tasks.html" title="Product Cloud Evaluation Tasks"></iframe>
+        <div class="preview-meta">
+          <h2>Product Cloud · 评测任务管理</h2>
+          <p>独立一级菜单：集中管理任务队列、运行状态和历史任务；任务详情承载评估方法、阶段指标和证据。</p>
+          <a class="btn primary" href="./product-cloud-tasks.html">打开完整页</a>
         </div>
       </section>
     </main>
