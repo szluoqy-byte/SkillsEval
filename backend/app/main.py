@@ -11,9 +11,10 @@ from pydantic import BaseModel
 
 from .db import connect, encode_json, init_db, now_iso, row_to_dict, rows_to_dicts, seed_db
 from .eval_generation import confirm_generation_job, create_generation_job, delete_generation_job, get_job, list_jobs_for_skill, run_generation_job
-from .evaluator import create_task, run_task
+from .evaluator import create_task, recommendation_for, run_task
 from .importer import confirm_import_draft, create_import_draft, get_import_draft, new_id
 from .model_client import PROVIDER_TYPES, call_configured_model, normalize_base_url, sanitize_provider
+from .static_scanner import scan_status, static_score, summarize
 
 
 app = FastAPI(title="SkillsEval API", version="0.1.0")
@@ -115,8 +116,14 @@ class ScoringWeightsRequest(BaseModel):
     weights: list[ScoringWeightRequest]
 
 
+class ScanFindingReviewRequest(BaseModel):
+    review_severity: str
+    review_note: str = ""
+
+
 SCORING_STAGES = {"static_scan", "trigger_eval", "effect_eval", "performance_eval"}
 TEXT_PREVIEW_LIMIT_BYTES = 200_000
+SCAN_REVIEW_SEVERITIES = {"critical", "major", "minor", "info", "no_risk"}
 
 
 def clean_required(value: str, field: str) -> str:
@@ -172,6 +179,120 @@ def summary_scan_rank(item: dict[str, Any]) -> int:
     return ranks.get(summary.get("scan_status"), 4)
 
 
+def effective_finding_severity(finding: dict[str, Any]) -> str:
+    return finding.get("review_severity") or finding.get("severity") or "info"
+
+
+def scan_counts_for_reviewed_findings(findings: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {"critical_count": 0, "major_count": 0, "minor_count": 0, "info_count": 0}
+    for finding in findings:
+        severity = effective_finding_severity(finding)
+        if severity == "no_risk":
+            continue
+        key = f"{severity}_count"
+        if key in counts:
+            counts[key] += 1
+    return counts
+
+
+def recalculate_scan_review(conn: sqlite3.Connection, task_id: str, run_id: str) -> None:
+    stage = row_to_dict(conn.execute("SELECT * FROM stage_results WHERE run_id = ? AND stage = 'static_scan'", (run_id,)).fetchone())
+    run = row_to_dict(conn.execute("SELECT * FROM evaluation_runs WHERE id = ?", (run_id,)).fetchone())
+    task = row_to_dict(conn.execute("SELECT * FROM evaluation_tasks WHERE id = ?", (task_id,)).fetchone())
+    if not stage or not run or not task:
+        raise HTTPException(status_code=404, detail="Scan stage is not available for this task.")
+
+    findings = rows_to_dicts(conn.execute("SELECT * FROM findings WHERE run_id = ? AND stage = 'static_scan'", (run_id,)).fetchall())
+    counts = scan_counts_for_reviewed_findings(findings)
+    no_risk_count = sum(1 for finding in findings if effective_finding_severity(finding) == "no_risk")
+    active_count = len(findings) - no_risk_count
+    metrics = dict(stage.get("metrics") or {})
+    metrics.update(
+        {
+            **counts,
+            "total_findings": active_count,
+            "active_findings": active_count,
+            "raw_findings": len(findings),
+            "no_risk_count": no_risk_count,
+        }
+    )
+    score = static_score(counts)
+    status = scan_status(counts)
+    summary = summarize(counts)
+    conn.execute(
+        """
+        UPDATE stage_results
+        SET score = ?, summary = ?, metrics = ?
+        WHERE id = ?
+        """,
+        (score, summary, encode_json(metrics), stage["id"]),
+    )
+
+    result_summary = dict(run.get("result_summary") or {})
+    result_summary.update({"scan_score": score, "scan_status": status, "static_score": score})
+    trigger_score = float(result_summary.get("trigger_score") or 0)
+    trigger_total = int(result_summary.get("trigger_total_queries") or 0)
+    effect_score_value = result_summary.get("effect_score")
+    effect_score = float(effect_score_value) if isinstance(effect_score_value, (int, float)) else None
+    recommendation = recommendation_for(
+        status,
+        trigger_score,
+        trigger_total,
+        effect_score,
+        int(result_summary.get("effect_valid_cases") or 0),
+        float(result_summary.get("skill_lift") or 0),
+        str(result_summary.get("cost_efficiency_classification") or ""),
+        run.get("status") == "failed",
+    )
+    conn.execute(
+        "UPDATE evaluation_runs SET recommendation = ?, result_summary = ? WHERE id = ?",
+        (recommendation, encode_json(result_summary), run_id),
+    )
+
+    latest_version_run = conn.execute(
+        """
+        SELECT er.id
+        FROM evaluation_runs er
+        JOIN evaluation_tasks t ON t.id = er.task_id
+        WHERE t.skill_version_id = ? AND er.status = 'completed'
+        ORDER BY er.finished_at DESC, er.created_at DESC
+        LIMIT 1
+        """,
+        (task["skill_version_id"],),
+    ).fetchone()
+    if latest_version_run and latest_version_run["id"] == run_id:
+        conn.execute("UPDATE skill_versions SET static_scan_status = ? WHERE id = ?", (status, task["skill_version_id"]))
+
+
+def current_task_run_id(conn: sqlite3.Connection, task_id: str) -> str:
+    row = conn.execute(
+        """
+        SELECT er.id
+        FROM evaluation_runs er
+        WHERE er.task_id = ?
+        ORDER BY er.created_at DESC
+        LIMIT 1
+        """,
+        (task_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Task has no run evidence yet.")
+    return row["id"]
+
+
+def ensure_task_scan_finding(conn: sqlite3.Connection, task_id: str, finding_id: str) -> tuple[str, dict[str, Any]]:
+    run_id = current_task_run_id(conn, task_id)
+    finding = row_to_dict(
+        conn.execute(
+            "SELECT * FROM findings WHERE id = ? AND run_id = ? AND stage = 'static_scan'",
+            (finding_id, run_id),
+        ).fetchone()
+    )
+    if not finding:
+        raise HTTPException(status_code=404, detail="Scan finding not found for this task.")
+    return run_id, finding
+
+
 def read_run_artifact(run_root: Path, artifact_path: str) -> tuple[dict[str, Any] | None, str | None]:
     try:
         target = Path(artifact_path).resolve()
@@ -186,17 +307,40 @@ def read_run_artifact(run_root: Path, artifact_path: str) -> tuple[dict[str, Any
         return None, "Artifact file is not valid JSON."
 
 
-def normalize_static_evidence(stage: dict[str, Any] | None, payload: dict[str, Any] | None, error: str | None) -> dict[str, Any]:
-    findings = payload.get("findings", []) if payload else []
-    findings_by_code = {item.get("code"): item for item in findings if item.get("code")}
+def normalize_reviewed_finding(finding: dict[str, Any]) -> dict[str, Any]:
+    effective_severity = effective_finding_severity(finding)
+    return {
+        **finding,
+        "original_severity": finding.get("severity"),
+        "effective_severity": effective_severity,
+        "review_severity": finding.get("review_severity"),
+        "review_note": finding.get("review_note") or "",
+        "reviewed_at": finding.get("reviewed_at"),
+        "reviewed_by": finding.get("reviewed_by"),
+    }
+
+
+def normalize_static_evidence(stage: dict[str, Any] | None, payload: dict[str, Any] | None, error: str | None, db_findings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    reviewed_findings = [normalize_reviewed_finding(item) for item in db_findings or []]
+    findings_by_code: dict[str, list[dict[str, Any]]] = {}
+    for finding in reviewed_findings:
+        code = finding.get("code")
+        if code:
+            findings_by_code.setdefault(code, []).append(finding)
     rules = []
     for rule in payload.get("rules", []) if payload else []:
-        finding = findings_by_code.get(rule.get("rule_id"))
+        rule_findings = findings_by_code.get(rule.get("rule_id"), [])
+        active_findings = [item for item in rule_findings if item.get("effective_severity") != "no_risk"]
+        no_risk_findings = [item for item in rule_findings if item.get("effective_severity") == "no_risk"]
+        status = "failed" if active_findings else "reviewed_no_risk" if no_risk_findings else "passed"
         rules.append(
             {
                 **rule,
-                "status": "failed" if finding else "passed",
-                "finding": finding,
+                "status": status,
+                "finding": (active_findings or no_risk_findings or [None])[0],
+                "findings": active_findings + no_risk_findings,
+                "active_findings_count": len(active_findings),
+                "no_risk_findings_count": len(no_risk_findings),
             }
         )
     return {
@@ -251,7 +395,7 @@ def build_task_evidence_detail(conn: sqlite3.Connection, task_id: str) -> dict[s
     return {
         "task_id": task_id,
         "run_id": run["id"],
-        "static_scan": normalize_static_evidence(stages.get("static_scan"), payloads.get("static_scan"), errors.get("static_scan")),
+        "static_scan": normalize_static_evidence(stages.get("static_scan"), payloads.get("static_scan"), errors.get("static_scan"), task.get("findings", [])),
         "trigger_eval": normalize_stage_evidence(stages.get("trigger_eval"), payloads.get("trigger_eval"), errors.get("trigger_eval")),
         "effect_eval": normalize_effect_evidence(stages.get("effect_eval"), payloads.get("effect_eval"), errors.get("effect_eval")),
         "performance_eval": normalize_stage_evidence(stages.get("performance_eval"), payloads.get("performance_eval"), errors.get("performance_eval")),
@@ -269,7 +413,13 @@ def build_skill_detail(conn: sqlite3.Connection, skill_id: str) -> dict[str, Any
             """
             SELECT t.*, er.overall_score, er.recommendation, er.result_summary
             FROM evaluation_tasks t
-            LEFT JOIN evaluation_runs er ON er.task_id = t.id
+            LEFT JOIN evaluation_runs er ON er.id = (
+              SELECT er2.id
+              FROM evaluation_runs er2
+              WHERE er2.task_id = t.id
+              ORDER BY COALESCE(er2.finished_at, er2.started_at, er2.created_at) DESC, er2.id DESC
+              LIMIT 1
+            )
             WHERE t.skill_id = ?
             ORDER BY t.created_at DESC
             LIMIT 1
@@ -780,15 +930,14 @@ def skills() -> list[dict[str, Any]]:
                    er.result_summary, er.finished_at AS last_evaluated_at
             FROM skills s
             LEFT JOIN skill_versions sv ON sv.id = s.latest_version_id
-            LEFT JOIN evaluation_tasks t ON t.id = (
-              SELECT t2.id
+            LEFT JOIN evaluation_runs er ON er.id = (
+              SELECT er2.id
               FROM evaluation_tasks t2
               JOIN evaluation_runs er2 ON er2.task_id = t2.id AND er2.status = 'completed'
               WHERE t2.skill_id = s.id AND t2.skill_version_id = s.latest_version_id
               ORDER BY er2.finished_at DESC, er2.id DESC
               LIMIT 1
             )
-            LEFT JOIN evaluation_runs er ON er.task_id = t.id AND er.status = 'completed'
             ORDER BY s.updated_at DESC
             """
         ).fetchall()
@@ -989,7 +1138,13 @@ def tasks() -> list[dict[str, Any]]:
             JOIN skills s ON s.id = t.skill_id
             JOIN skill_versions sv ON sv.id = t.skill_version_id
             JOIN runner_environments r ON r.id = t.runner_environment_id
-            LEFT JOIN evaluation_runs er ON er.task_id = t.id
+            LEFT JOIN evaluation_runs er ON er.id = (
+              SELECT er2.id
+              FROM evaluation_runs er2
+              WHERE er2.task_id = t.id
+              ORDER BY COALESCE(er2.finished_at, er2.started_at, er2.created_at) DESC, er2.id DESC
+              LIMIT 1
+            )
             ORDER BY t.created_at DESC
             """
         ).fetchall()
@@ -1027,6 +1182,41 @@ def task_detail(task_id: str) -> dict[str, Any]:
 @app.get("/api/tasks/{task_id}/evidence-detail")
 def task_evidence_detail(task_id: str) -> dict[str, Any]:
     with connect() as conn:
+        return build_task_evidence_detail(conn, task_id)
+
+
+@app.put("/api/tasks/{task_id}/scan-findings/{finding_id}/review")
+def review_scan_finding(task_id: str, finding_id: str, request: ScanFindingReviewRequest) -> dict[str, Any]:
+    review_severity = request.review_severity.strip()
+    if review_severity not in SCAN_REVIEW_SEVERITIES:
+        raise HTTPException(status_code=400, detail="review_severity must be critical, major, minor, info, or no_risk.")
+    with connect() as conn:
+        run_id, _finding = ensure_task_scan_finding(conn, task_id, finding_id)
+        conn.execute(
+            """
+            UPDATE findings
+            SET review_severity = ?, review_note = ?, reviewed_at = ?, reviewed_by = 'manual'
+            WHERE id = ?
+            """,
+            (review_severity, request.review_note.strip(), now_iso(), finding_id),
+        )
+        recalculate_scan_review(conn, task_id, run_id)
+        return build_task_evidence_detail(conn, task_id)
+
+
+@app.delete("/api/tasks/{task_id}/scan-findings/{finding_id}/review")
+def clear_scan_finding_review(task_id: str, finding_id: str) -> dict[str, Any]:
+    with connect() as conn:
+        run_id, _finding = ensure_task_scan_finding(conn, task_id, finding_id)
+        conn.execute(
+            """
+            UPDATE findings
+            SET review_severity = NULL, review_note = '', reviewed_at = NULL, reviewed_by = NULL
+            WHERE id = ?
+            """,
+            (finding_id,),
+        )
+        recalculate_scan_review(conn, task_id, run_id)
         return build_task_evidence_detail(conn, task_id)
 
 

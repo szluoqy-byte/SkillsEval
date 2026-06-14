@@ -507,6 +507,7 @@ h2 {
 .status-positive-lift,
 .status-triggered,
 .status-matched,
+.status-no-risk,
 .status-measured,
 .status-enabled {
   background: #eaf8f1;
@@ -1637,7 +1638,6 @@ h2 {
 
 .evidence-summary p,
 .rule-row p,
-.trigger-result-item p,
 .not-implemented-box p {
   margin-top: 5px;
   color: var(--muted);
@@ -1710,12 +1710,49 @@ h2 {
   background: #fff;
 }
 
+.rule-row > * {
+  min-width: 0;
+}
+
+.rule-row p,
+.rule-row strong {
+  overflow-wrap: anywhere;
+}
+
+.rule-row.scan-finding-row {
+  grid-template-columns: 120px 140px 100px 170px minmax(0, 1fr);
+}
+
 .rule-head {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   background: var(--surface-soft);
+}
+
+.risk-review-control {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.risk-review-control span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.risk-review-control select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-weight: 800;
 }
 
 .rule-row small,
@@ -1726,15 +1763,120 @@ h2 {
   overflow-wrap: anywhere;
 }
 
-.trigger-result-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(220px, .7fr);
-  gap: 14px;
-  align-items: start;
-  padding: 14px;
+.trigger-table-wrap {
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+}
+
+.trigger-result-table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+}
+
+.trigger-result-table th {
+  padding: 11px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: left;
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--line);
+}
+
+.trigger-result-table th:first-child,
+.trigger-result-table td:first-child {
+  width: 44%;
+}
+
+.trigger-result-table th:nth-child(2),
+.trigger-result-table th:nth-child(3),
+.trigger-result-table th:nth-child(4) {
+  width: 105px;
+}
+
+.trigger-result-table th:nth-child(5) {
+  width: 110px;
+}
+
+.trigger-result-table th:nth-child(6) {
+  width: 150px;
+}
+
+.trigger-result-table td {
+  padding: 12px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.trigger-result-row:hover td {
+  background: #f7fbff;
+}
+
+.trigger-result-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.trigger-query-cell {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.trigger-query-cell strong {
+  color: var(--text);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.trigger-query-cell small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trigger-query-cell .warning {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trigger-token {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: #f7fbff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.trigger-duration {
+  color: var(--blue-dark);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.trigger-artifacts {
+  min-width: 150px;
+}
+
+.trigger-artifacts summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.trigger-artifacts small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .trigger-pills {
@@ -2304,7 +2446,7 @@ textarea {
 
   .evidence-summary,
   .rule-row,
-  .trigger-result-item,
+  .rule-row.scan-finding-row,
   .scan-rule-toolbar,
   .effect-summary-grid,
   .effect-run-compare,

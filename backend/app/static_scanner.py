@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -497,6 +498,11 @@ def parse_frontmatter_lines(lines: list[str]) -> tuple[dict[str, Any], str | Non
 
 def parse_scalar(value: str) -> Any:
     clean = value.strip()
+    if (clean.startswith("{") and clean.endswith("}")) or (clean.startswith("[") and clean.endswith("]")):
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            return clean
     if (clean.startswith('"') and clean.endswith('"')) or (clean.startswith("'") and clean.endswith("'")):
         return clean[1:-1]
     if clean in {"true", "false"}:

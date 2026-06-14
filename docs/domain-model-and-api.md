@@ -440,7 +440,11 @@ ZIP 上传 -> Import Draft -> 用户确认 -> Skill/SkillVersion
 | `run_id` | 所属 Run |
 | `stage` | 当前为 static_scan |
 | `code` | 规则 ID |
-| `severity` | critical/major/minor/info |
+| `severity` | scanner 原始等级，critical/major/minor/info |
+| `review_severity` | 人工确认等级，critical/major/minor/info/no_risk，可为空 |
+| `review_note` | 人工确认备注 |
+| `reviewed_at` | 人工确认时间 |
+| `reviewed_by` | MVP 固定为 manual |
 | `title` | 标题 |
 | `detail` | 详情 |
 | `file_path` | 相对文件路径 |
@@ -727,7 +731,17 @@ POST /api/tasks
 POST /api/tasks/{task_id}/run-now
 GET  /api/tasks/{task_id}
 GET  /api/tasks/{task_id}/evidence-detail
+PUT  /api/tasks/{task_id}/scan-findings/{finding_id}/review
+DELETE /api/tasks/{task_id}/scan-findings/{finding_id}/review
 ```
+
+Scan finding review：
+
+- `PUT` 请求体为 `{"review_severity":"no_risk","review_note":""}`。
+- `review_severity` 支持 `critical`、`major`、`minor`、`info`、`no_risk`。
+- `DELETE` 清除人工确认，恢复 scanner 原始等级。
+- 保存或清除后，系统重新计算当前 Run 的 `scan_score`、`scan_status` 和 recommendation。
+- Raw `static/findings.json` 不改写，API 和页面使用 DB 中的 effective severity。
 
 `POST /api/tasks` 请求：
 

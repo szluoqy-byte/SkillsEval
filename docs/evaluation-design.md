@@ -127,6 +127,8 @@ scan_score = clamp(
 )
 ```
 
+Scan 分数展示为人工确认后的 effective score。默认使用 scanner 原始 severity；当测试人员在任务详情中确认 finding 风险等级后，系统按 `review_severity ?? severity` 重新统计。`no_risk` 表示人工确认为无风险，不参与扣分，也不计入 active findings。Raw `static/findings.json` 保留原始 scanner 输出，不被人工确认改写。
+
 状态：
 
 - `critical`：存在 critical finding。
@@ -438,14 +440,18 @@ Task Detail evidence workspace 分为：
 
 ### Scan
 
-默认展示 findings：
+默认展示 Active Findings：
 
 - rule id
-- severity
+- original severity
+- effective severity
+- review severity
 - title
 - detail
 - file_path
 - line_number
+
+Scan tab 还提供 No Risk、Clean Rules、All Rules 视图。No Risk 展示已人工确认为无风险的 findings；Clean Rules 和 All Rules 用于审计扫描覆盖。
 - fix
 
 可切换 passed rules。

@@ -54,6 +54,24 @@ def test_static_scanner_passes_clean_skill(tmp_path):
     assert scan["findings"] == []
 
 
+def test_static_scanner_accepts_inline_metadata_mapping(tmp_path):
+    root = tmp_path / "weather"
+    write_skill(
+        root,
+        '---\n'
+        'name: weather\n'
+        'description: Fetch current weather details.\n'
+        'metadata: {"clawdbot":{"emoji":"🌤️","requires":{"bins":["curl"]}}}\n'
+        '---\n'
+        'Use this skill to answer weather requests.\n',
+    )
+
+    scan = scan_skill_version(root, {"skill_md_path": "weather/SKILL.md"})
+
+    assert "OPTIONAL-006" not in codes(scan)
+    assert scan["status"] == "passed"
+
+
 def test_static_scanner_reports_frontmatter_name_description_and_body_rules(tmp_path):
     missing = tmp_path / "missing"
     missing.mkdir()

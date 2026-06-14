@@ -229,8 +229,11 @@ export type StaticRuleEvidence = {
   severity: string;
   title: string;
   fix: string;
-  status: "passed" | "failed";
+  status: "passed" | "failed" | "reviewed_no_risk";
   finding?: Finding | null;
+  findings: Finding[];
+  active_findings_count: number;
+  no_risk_findings_count: number;
 };
 
 export type StageEvidenceDetail = {
@@ -320,6 +323,12 @@ export type TaskEvidenceDetail = {
 export type Finding = {
   id: string;
   severity: string;
+  original_severity?: string | null;
+  effective_severity?: string | null;
+  review_severity?: string | null;
+  review_note?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
   code: string;
   title: string;
   detail: string;

@@ -106,6 +106,13 @@ scan_score = clamp(
 )
 ```
 
+`critical_count`、`major_count`、`minor_count`、`info_count` 默认来自 scanner 原始 findings。
+如果测试人员对 finding 做了人工风险确认，则使用 effective severity 重新统计：
+
+- `review_severity = critical/major/minor/info`：按确认后的等级参与扣分。
+- `review_severity = no_risk`：不参与扣分，也不计入 active findings。
+- 未确认的 finding 使用 scanner 原始 `severity`。
+
 状态规则：
 
 | 状态 | 条件 | 产品展示建议 |
@@ -119,7 +126,38 @@ scan_score = clamp(
 - 不建议说整个 Skill “通过/失败”。
 - 建议表达为“发现风险”“无活跃 findings”“需复核”。
 
-## 6. 扫描文件范围
+## 6. 人工确认风险等级
+
+Static Scan 允许测试人员在任务详情页对当前 Run 的 finding 做人工确认，用于处理误报或调整风险等级。
+
+确认范围：
+
+- 只作用于当前 `evaluation_run`。
+- 不影响未来重新评测产生的新 findings。
+- 不改写 `data/runs/<run_id>/static/findings.json` 原始 artifact。
+
+持久化位置：
+
+- `findings.severity` 保存 scanner 原始等级。
+- `findings.review_severity` 保存人工确认等级。
+- `findings.review_note` 保存可选备注。
+- `findings.reviewed_at` 和 `findings.reviewed_by` 保存确认时间与来源。
+
+页面与汇总使用 effective severity：
+
+```text
+effective_severity = review_severity ?? severity
+```
+
+当 `review_severity = no_risk` 时：
+
+- finding 移入 No Risk 视图。
+- `scan_score` 重新计算。
+- `scan_status` 重新计算。
+- evaluation run 的 recommendation 重新计算。
+- 如果该 run 是对应 Skill Version 最新 completed run，则同步更新 `skill_versions.static_scan_status`。
+
+## 6.1 扫描文件范围
 
 `static_scanner.py` 只读取文本类文件：
 
@@ -406,6 +444,7 @@ compatibility
 - 类别：Optional Fields
 - 严重级别：major
 - 触发条件：提供了 `metadata`，但类型不是 mapping。
+- 允许示例：`metadata: {"clawdbot":{"emoji":"🌤️","requires":{"bins":["curl"]}}}`，这种扩展元数据仍然是 mapping，应通过本规则。
 - 修复建议：使用 key-value mapping。
 
 ### OPTIONAL-008：allowed-tools 必须是空格分隔字符串
@@ -696,15 +735,19 @@ compatibility
 
 ## 19. 前端展示设计
 
-Scan evidence tab 应分为两个视角：
+Scan evidence tab 应分为四个视角：
 
-- `Findings`：默认视角，只展示命中的规则。
-- `Passed Rules`：辅助视角，展示未命中的规则。
+- `Active Findings`：默认视角，只展示仍参与扣分的 findings。
+- `No Risk`：展示已人工确认为无风险的 findings。
+- `Clean Rules`：辅助视角，展示未命中的规则。
+- `All Rules`：展示完整规则执行情况。
 
 Finding 展示字段：
 
 - rule id
-- severity
+- original severity
+- effective severity
+- review severity
 - title
 - detail
 - file path

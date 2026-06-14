@@ -22,7 +22,7 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { api } from "./api";
-import type { AssertionResult, Category, EffectCase, EffectCaseResult, EffectEvalEvidence, EvaluationSetGenerationJob, EvaluationTask, GenerationDraftItem, GenerationTarget, ImportDraft, ModelApiProvider, ModelProfile, ModelRoles, Runner, Skill, SkillFileContent, SkillFileEntry, SkillVersion, StageEvidenceDetail, StaticScanEvidence, TaskEvidenceDetail, TriggerEvalEvidence, TriggerEvalResult, TriggerQuery } from "./types";
+import type { AssertionResult, Category, EffectCase, EffectCaseResult, EffectEvalEvidence, EvaluationSetGenerationJob, EvaluationTask, Finding, GenerationDraftItem, GenerationTarget, ImportDraft, ModelApiProvider, ModelProfile, ModelRoles, Runner, Skill, SkillFileContent, SkillFileEntry, SkillVersion, StageEvidenceDetail, StaticRuleEvidence, StaticScanEvidence, TaskEvidenceDetail, TriggerEvalEvidence, TriggerEvalResult, TriggerQuery } from "./types";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -94,6 +94,17 @@ function staticScanLabel(value?: string | null) {
   return labels[value ?? ""] ?? value ?? "unknown";
 }
 
+function scanSeverityLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    critical: "Critical",
+    major: "Major",
+    minor: "Minor",
+    info: "Info",
+    no_risk: "No risk",
+  };
+  return labels[value ?? ""] ?? value ?? "unknown";
+}
+
 function recommendationLabel(value?: string | null) {
   const labels: Record<string, string> = {
     recommended: "Recommended",
@@ -109,7 +120,8 @@ function evidenceSummaryLabel(summary?: string | null) {
   if (!summary) return "";
   return summary
     .replace("Static scan passed with no active findings.", "Static scan found no active findings.")
-    .replace(/Trigger eval completed: (\d+)\/(\d+) queries passed\./, "Trigger eval completed: $1/$2 queries matched expectations.");
+    .replace(/Trigger eval completed: (\d+)\/(\d+) queries passed\./, "Trigger 评测完成：$1/$2 条通过。")
+    .replace(/Trigger eval completed: (\d+)\/(\d+) queries matched expectations\./, "Trigger 评测完成：$1/$2 条通过。");
 }
 
 function StatusPill({ value, label }: { value?: string | null; label?: string }) {
@@ -152,6 +164,22 @@ function effectStatusFromSummary(summary: Record<string, unknown> | undefined) {
 
 function effectScoreFromSummary(summary: Record<string, unknown> | undefined) {
   return numberFromSummary(summary, "effect_score");
+}
+
+function triggerExpectationLabel(shouldTrigger: boolean | number) {
+  return isEnabled(shouldTrigger) ? "Trigger" : "Not Trigger";
+}
+
+function triggerExpectationText(shouldTrigger: boolean | number) {
+  return `预期 ${triggerExpectationLabel(shouldTrigger)}`;
+}
+
+function triggerObservedLabel(triggered: boolean) {
+  return triggered ? "Trigger" : "Not Trigger";
+}
+
+function triggerVerdictLabel(pass: boolean) {
+  return pass ? "Passed" : "Failed";
 }
 
 function effectStatusLabel(value?: string | null) {
@@ -225,7 +253,7 @@ function AssessmentRows({ task, onSelect }: { task: EvaluationTask; onSelect: (s
       </button>
       <button className="stage-row stage-row-action" type="button" onClick={() => onSelect("trigger_eval")}>
         <span>Trigger</span>
-        <small>{triggerMatched ?? 0}/{triggerTotal ?? 0} matched</small>
+        <small>{triggerMatched ?? 0}/{triggerTotal ?? 0} 通过</small>
         <div className="meter"><i style={{ width: `${triggerScore ?? 0}%` }} /></div>
         <CompactScore value={triggerScore} />
       </button>
@@ -842,8 +870,8 @@ function EvaluationSetTab({ skillId }: { skillId: string }) {
           />
           <section className="eval-compact-summary">
             <CompactStat label="Trigger Queries" value={triggerQueries.length} />
-            <CompactStat label="Should Trigger" value={positiveTriggers} />
-            <CompactStat label="Negative Queries" value={negativeTriggers} />
+            <CompactStat label="预期 Trigger" value={positiveTriggers} />
+            <CompactStat label="预期 Not Trigger" value={negativeTriggers} />
             <CompactStat label="Effect Cases" value={effectCases.length} />
           </section>
           <section className="eval-workbench">
@@ -997,8 +1025,8 @@ function TriggerFilterTabs({ value, onChange }: { value: TriggerFilter; onChange
   return (
     <div className="segmented-control" aria-label="Trigger filter">
       <button type="button" className={value === "all" ? "active" : ""} onClick={() => onChange("all")}>全部</button>
-      <button type="button" className={value === "should" ? "active" : ""} onClick={() => onChange("should")}>应触发</button>
-      <button type="button" className={value === "negative" ? "active" : ""} onClick={() => onChange("negative")}>负样例</button>
+      <button type="button" className={value === "should" ? "active" : ""} onClick={() => onChange("should")}>预期 Trigger</button>
+      <button type="button" className={value === "negative" ? "active" : ""} onClick={() => onChange("negative")}>预期 Not Trigger</button>
     </div>
   );
 }
@@ -1054,9 +1082,8 @@ function TriggerCompactPanel({
           <div className="compact-eval-row" key={item.id}>
             <div className="compact-eval-content">
               <strong>{item.query}</strong>
-              <span>{isEnabled(item.should_trigger) ? "预期应该触发 Skill" : "预期不应该触发 Skill"}</span>
+              <span>{triggerExpectationText(item.should_trigger)}</span>
             </div>
-            <StatusPill value={isEnabled(item.should_trigger) ? "should_trigger" : "negative"} />
             <div className="compact-row-actions">
               <button className="btn small" type="button" onClick={() => onOpenDetail(item)}>详情</button>
               <button className="icon-btn danger" type="button" aria-label={`删除 ${item.query}`} onClick={() => window.confirm("删除这条 Trigger Query？") && onDelete(item.id)}><Trash2 size={16} /></button>
@@ -1167,9 +1194,8 @@ function EvaluationItemDrawer({
         />
         {detail.type === "trigger" ? (
           <div className="drawer-content">
-            <StatusPill value={isEnabled(detail.item.should_trigger) ? "should_trigger" : "negative"} />
             <DetailBlock title="Query" body={detail.item.query} />
-            <DetailBlock title="Expected behavior" body={isEnabled(detail.item.should_trigger) ? "该 query 预期应该触发当前 Skill。" : "该 query 预期不应该触发当前 Skill。"} />
+            <DetailBlock title="预期行为" body={triggerExpectationText(detail.item.should_trigger)} />
           </div>
         ) : (
           <div className="drawer-content">
@@ -1227,9 +1253,8 @@ function TriggerAllModal({
             <div className="compact-eval-row all-row" key={item.id}>
               <div className="compact-eval-content">
                 <strong>{item.query}</strong>
-                <span>{isEnabled(item.should_trigger) ? "预期应该触发 Skill" : "预期不应该触发 Skill"}</span>
+                <span>{triggerExpectationText(item.should_trigger)}</span>
               </div>
-              <StatusPill value={isEnabled(item.should_trigger) ? "should_trigger" : "negative"} />
               <div className="compact-row-actions">
                 <button className="btn small" type="button" onClick={() => onOpenDetail(item)}>详情</button>
                 <button className="icon-btn danger" type="button" aria-label={`删除 ${item.query}`} onClick={() => window.confirm("删除这条 Trigger Query？") && onDelete(item.id)}><Trash2 size={16} /></button>
@@ -1464,9 +1489,9 @@ function TriggerDraftEditor({ item, onChange, onDelete }: { item: GenerationDraf
       </div>
       <div className="draft-card-grid trigger-draft-grid">
         <label className="draft-field draft-field-main">Query<textarea value={item.query ?? ""} onChange={(event) => onChange({ ...item, query: event.target.value })} /></label>
-        <label className="draft-field draft-side-field">Expected behavior<select value={String(!!item.should_trigger)} onChange={(event) => onChange({ ...item, should_trigger: event.target.value === "true" })}>
-          <option value="true">Should trigger</option>
-          <option value="false">Should not trigger</option>
+        <label className="draft-field draft-side-field">预期行为<select value={String(!!item.should_trigger)} onChange={(event) => onChange({ ...item, should_trigger: event.target.value === "true" })}>
+          <option value="true">预期 Trigger</option>
+          <option value="false">预期 Not Trigger</option>
         </select></label>
       </div>
       {item.rationale && <p className="draft-rationale">{item.rationale}</p>}
@@ -1510,11 +1535,11 @@ function TriggerQueryModal({
   return (
     <div className="modal-backdrop">
       <form className="modal settings-modal" onSubmit={(event) => { event.preventDefault(); onSubmit(form); }}>
-        <ModalHeader title="新增 Trigger Query" description="添加一个用户 query，并标注它是否应该触发当前 Skill。" onClose={onClose} />
+        <ModalHeader title="新增 Trigger Query" description="添加一个用户 query，并标注预期是 Trigger 还是 Not Trigger。" onClose={onClose} />
         <label>Query<input value={form.query} onChange={(event) => setForm({ ...form, query: event.target.value })} placeholder="例如：summarize this benchmark report" required /></label>
-        <label>Expected behavior<select value={String(form.should_trigger)} onChange={(event) => setForm({ ...form, should_trigger: event.target.value === "true" })}>
-          <option value="true">Should trigger</option>
-          <option value="false">Should not trigger</option>
+        <label>预期行为<select value={String(form.should_trigger)} onChange={(event) => setForm({ ...form, should_trigger: event.target.value === "true" })}>
+          <option value="true">预期 Trigger</option>
+          <option value="false">预期 Not Trigger</option>
         </select></label>
         {error && <ErrorBox title="保存失败" messages={[error]} />}
         <div className="modal-actions">
@@ -1688,6 +1713,7 @@ function TaskReport({ task }: { task: EvaluationTask }) {
       </div>
       <div className="panel wide">
         <EvidenceWorkspace
+          taskId={task.id}
           activeTab={activeEvidenceTab}
           detail={evidence.data}
           isLoading={evidence.isLoading}
@@ -1707,12 +1733,14 @@ const evidenceTabs = [
 ];
 
 function EvidenceWorkspace({
+  taskId,
   activeTab,
   detail,
   isLoading,
   error,
   onTabChange,
 }: {
+  taskId: string;
   activeTab: string;
   detail?: TaskEvidenceDetail;
   isLoading: boolean;
@@ -1736,7 +1764,7 @@ function EvidenceWorkspace({
       </div>
       {isLoading ? <Loading /> : error ? <ErrorBox title="证据加载失败" messages={[error]} /> : detail ? (
         <div className="evidence-body">
-          {activeTab === "static_scan" && <StaticScanEvidencePanel evidence={detail.static_scan} />}
+          {activeTab === "static_scan" && <StaticScanEvidencePanel taskId={taskId} evidence={detail.static_scan} />}
           {activeTab === "trigger_eval" && <TriggerEvalEvidencePanel evidence={detail.trigger_eval} />}
           {activeTab === "effect_eval" && <EffectEvalEvidencePanel evidence={detail.effect_eval} />}
           {activeTab === "raw_artifacts" && <RawArtifactsPanel artifacts={detail.artifacts} />}
@@ -1746,30 +1774,73 @@ function EvidenceWorkspace({
   );
 }
 
-function StaticScanEvidencePanel({ evidence }: { evidence: StaticScanEvidence }) {
-  const [scanRuleView, setScanRuleView] = useState<"findings" | "clean" | "all">("findings");
-  const findingRules = evidence.rules.filter((rule) => rule.status === "failed");
-  const cleanRules = evidence.rules.filter((rule) => rule.status !== "failed");
-  const visibleRules = scanRuleView === "findings" ? findingRules : scanRuleView === "clean" ? cleanRules : evidence.rules;
-  const findings = findingRules.length;
+type ScanRuleView = "active" | "no_risk" | "clean" | "all";
+
+type ScanFindingRow = {
+  rule: StaticRuleEvidence;
+  finding: Finding;
+};
+
+const reviewSeverityOptions = ["critical", "major", "minor", "info", "no_risk"];
+
+function StaticScanEvidencePanel({ taskId, evidence }: { taskId: string; evidence: StaticScanEvidence }) {
+  const queryClient = useQueryClient();
+  const [scanRuleView, setScanRuleView] = useState<ScanRuleView>("active");
+  const findingRows = evidence.rules.flatMap((rule) => (rule.findings ?? []).map((finding) => ({ rule, finding })));
+  const activeFindingRows = findingRows.filter(({ finding }) => (finding.effective_severity ?? finding.severity) !== "no_risk");
+  const noRiskFindingRows = findingRows.filter(({ finding }) => (finding.effective_severity ?? finding.severity) === "no_risk");
+  const cleanRules = evidence.rules.filter((rule) => rule.status === "passed");
+  const visibleRules = scanRuleView === "clean" ? cleanRules : evidence.rules;
+  const reviewSuccess = () => {
+    queryClient.invalidateQueries({ queryKey: ["task", taskId] });
+    queryClient.invalidateQueries({ queryKey: ["task-evidence-detail", taskId] });
+    queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["skills"] });
+    queryClient.invalidateQueries({ queryKey: ["overview"] });
+  };
+  const updateReview = useMutation({
+    mutationFn: ({ findingId, review_severity }: { findingId: string; review_severity: string }) => api.reviewScanFinding(taskId, findingId, { review_severity }),
+    onSuccess: reviewSuccess,
+  });
+  const clearReview = useMutation({
+    mutationFn: ({ findingId }: { findingId: string }) => api.clearScanFindingReview(taskId, findingId),
+    onSuccess: reviewSuccess,
+  });
+  const handleReviewChange = (finding: Finding, value: string) => {
+    if (value === "__scanner__") {
+      clearReview.mutate({ findingId: finding.id });
+      return;
+    }
+    updateReview.mutate({ findingId: finding.id, review_severity: value });
+  };
+  const pendingFindingId = updateReview.isPending ? updateReview.variables?.findingId : clearReview.isPending ? clearReview.variables?.findingId : "";
+  const activeError = updateReview.error?.message ?? clearReview.error?.message;
+  const visibleFindingRows = scanRuleView === "no_risk" ? noRiskFindingRows : activeFindingRows;
+  const viewTitle = scanRuleView === "active" ? "Active Findings" : scanRuleView === "no_risk" ? "No Risk" : scanRuleView === "clean" ? "Clean Rules" : "All Rules";
   return (
     <div className="evidence-panel">
-      <StageEvidenceSummary title="Scan" evidence={evidence} extra={`${findings}/${evidence.rules.length} rules with findings`} />
+      <StageEvidenceSummary title="Scan" evidence={evidence} extra={`${activeFindingRows.length} active / ${noRiskFindingRows.length} no risk`} />
       {evidence.error && <ErrorBox title="Static artifact 读取失败" messages={[evidence.error]} />}
+      {activeError && <ErrorBox title="风险确认失败" messages={[activeError]} />}
       <div className="scan-rule-toolbar">
         <div>
-          <strong>{scanRuleView === "findings" ? "Findings" : scanRuleView === "clean" ? "Clean Rules" : "All Rules"}</strong>
+          <strong>{viewTitle}</strong>
           <span>
-            {scanRuleView === "findings"
-              ? "默认只展示命中问题的规则，便于快速定位风险。"
+            {scanRuleView === "active"
+              ? "默认只展示仍参与扣分的活跃风险，可在行内调整人工确认等级。"
+              : scanRuleView === "no_risk"
+                ? "查看已人工确认为无风险的 findings；它们不参与 Scan 扣分。"
               : scanRuleView === "clean"
                 ? "查看未命中 finding 的规则，用于审计覆盖。"
                 : "查看完整规则执行情况。"}
           </span>
         </div>
         <div className="segmented-control scan-rule-filter" aria-label="Scan rule filter">
-          <button className={scanRuleView === "findings" ? "active" : ""} type="button" onClick={() => setScanRuleView("findings")}>
-            Findings · {findingRules.length}
+          <button className={scanRuleView === "active" ? "active" : ""} type="button" onClick={() => setScanRuleView("active")}>
+            Active · {activeFindingRows.length}
+          </button>
+          <button className={scanRuleView === "no_risk" ? "active" : ""} type="button" onClick={() => setScanRuleView("no_risk")}>
+            No Risk · {noRiskFindingRows.length}
           </button>
           <button className={scanRuleView === "clean" ? "active" : ""} type="button" onClick={() => setScanRuleView("clean")}>
             Clean · {cleanRules.length}
@@ -1780,32 +1851,102 @@ function StaticScanEvidencePanel({ evidence }: { evidence: StaticScanEvidence })
         </div>
       </div>
       <div className="rule-table">
-        <div className="rule-row rule-head">
-          <span>Rule</span>
-          <span>Category</span>
-          <span>Severity</span>
-          <span>Status</span>
-          <span>Detail</span>
-        </div>
-        {visibleRules.length ? visibleRules.map((rule) => (
-          <div className="rule-row" key={rule.rule_id}>
-            <strong>{rule.rule_id}</strong>
-            <span>{rule.category}</span>
-            <StatusPill value={rule.severity} />
-            <StatusPill value={rule.status} label={rule.status === "failed" ? "Finding" : "No finding"} />
-            <div>
-              <strong>{rule.title}</strong>
-              <p>{rule.finding?.detail ?? rule.item}</p>
-              {rule.finding?.file_path && <small>{rule.finding.file_path}{rule.finding.line_number ? `:${rule.finding.line_number}` : ""}</small>}
-              {rule.finding?.fix && <small>Fix: {rule.finding.fix}</small>}
+        {scanRuleView === "active" || scanRuleView === "no_risk" ? (
+          <>
+            <div className="rule-row rule-head scan-finding-row">
+              <span>Rule</span>
+              <span>Category</span>
+              <span>Risk</span>
+              <span>Review</span>
+              <span>Detail</span>
             </div>
-          </div>
-        )) : (
-          <div className="scan-rule-empty">
-            <strong>当前视图没有规则项</strong>
-            <p>{scanRuleView === "findings" ? "本次 Scan 没有命中 finding。" : "切换到其他视图查看规则执行情况。"}</p>
-          </div>
+            {visibleFindingRows.length ? visibleFindingRows.map(({ rule, finding }) => (
+              <ScanFindingReviewRow
+                key={finding.id}
+                rule={rule}
+                finding={finding}
+                isPending={pendingFindingId === finding.id}
+                onChange={(value) => handleReviewChange(finding, value)}
+              />
+            )) : (
+              <div className="scan-rule-empty">
+                <strong>当前视图没有 finding</strong>
+                <p>{scanRuleView === "active" ? "当前没有仍参与扣分的活跃风险。" : "还没有人工确认为无风险的 finding。"}</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="rule-row rule-head">
+              <span>Rule</span>
+              <span>Category</span>
+              <span>Severity</span>
+              <span>Status</span>
+              <span>Detail</span>
+            </div>
+            {visibleRules.length ? visibleRules.map((rule) => (
+              <div className="rule-row" key={rule.rule_id}>
+                <strong>{rule.rule_id}</strong>
+                <span>{rule.category}</span>
+                <StatusPill value={rule.severity} />
+                <StatusPill
+                  value={rule.status === "reviewed_no_risk" ? "no_risk" : rule.status}
+                  label={rule.status === "failed" ? "Finding" : rule.status === "reviewed_no_risk" ? "No risk" : "No finding"}
+                />
+                <div>
+                  <strong>{rule.title}</strong>
+                  <p>{rule.finding?.detail ?? rule.item}</p>
+                  {rule.finding?.file_path && <small>{rule.finding.file_path}{rule.finding.line_number ? `:${rule.finding.line_number}` : ""}</small>}
+                  {rule.finding?.fix && <small>Fix: {rule.finding.fix}</small>}
+                </div>
+              </div>
+            )) : (
+              <div className="scan-rule-empty">
+                <strong>当前视图没有规则项</strong>
+                <p>切换到其他视图查看规则执行情况。</p>
+              </div>
+            )}
+          </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ScanFindingReviewRow({
+  rule,
+  finding,
+  isPending,
+  onChange,
+}: {
+  rule: StaticRuleEvidence;
+  finding: Finding;
+  isPending: boolean;
+  onChange: (value: string) => void;
+}) {
+  const effectiveSeverity = finding.effective_severity ?? finding.severity;
+  const originalSeverity = finding.original_severity ?? finding.severity;
+  return (
+    <div className="rule-row scan-finding-row">
+      <strong>{rule.rule_id}</strong>
+      <span>{rule.category}</span>
+      <StatusPill value={effectiveSeverity} label={scanSeverityLabel(effectiveSeverity)} />
+      <label className="risk-review-control">
+        <span>人工确认</span>
+        <select value={finding.review_severity ?? "__scanner__"} onChange={(event) => onChange(event.target.value)} disabled={isPending}>
+          <option value="__scanner__">原始: {scanSeverityLabel(originalSeverity)}</option>
+          {reviewSeverityOptions.map((severity) => (
+            <option key={severity} value={severity}>{scanSeverityLabel(severity)}</option>
+          ))}
+        </select>
+      </label>
+      <div>
+        <strong>{finding.title}</strong>
+        <p>{finding.detail}</p>
+        <small>Scanner severity: {scanSeverityLabel(originalSeverity)}</small>
+        {finding.reviewed_at && <small>Reviewed by {finding.reviewed_by ?? "manual"} at {finding.reviewed_at}</small>}
+        {finding.file_path && <small>{finding.file_path}{finding.line_number ? `:${finding.line_number}` : ""}</small>}
+        {finding.fix && <small>Fix: {finding.fix}</small>}
       </div>
     </div>
   );
@@ -1817,37 +1958,61 @@ function TriggerEvalEvidencePanel({ evidence }: { evidence: TriggerEvalEvidence 
       <StageEvidenceSummary
         title="Trigger"
         evidence={evidence}
-        extra={`${String(evidence.metrics.matched_queries ?? evidence.metrics.passed_queries ?? 0)}/${String(evidence.metrics.total_queries ?? evidence.results.length)} matched expectations`}
+        extra={`${String(evidence.metrics.matched_queries ?? evidence.metrics.passed_queries ?? 0)}/${String(evidence.metrics.total_queries ?? evidence.results.length)} 通过`}
       />
       {evidence.error && <ErrorBox title="Trigger artifact 读取失败" messages={[evidence.error]} />}
-      <div className="trigger-result-list">
-        {evidence.results.length ? evidence.results.map((item) => <TriggerResultItem key={item.query_id} item={item} />) : (
+      {evidence.results.length ? (
+        <div className="trigger-table-wrap">
+          <table className="trigger-result-table">
+            <thead>
+              <tr>
+                <th>Query</th>
+                <th>预期</th>
+                <th>实际</th>
+                <th>判定</th>
+                <th>耗时</th>
+                <th>产物</th>
+              </tr>
+            </thead>
+            <tbody>
+              {evidence.results.map((item) => <TriggerResultItem key={item.query_id} item={item} />)}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="trigger-result-list">
           <p className="muted">暂无 Trigger Query 执行结果。</p>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function TriggerResultItem({ item }: { item: TriggerEvalResult }) {
+  const expected = triggerExpectationLabel(item.should_trigger);
+  const actual = triggerObservedLabel(item.triggered);
+  const verdict = triggerVerdictLabel(item.pass);
   return (
-    <div className="trigger-result-item">
-      <div>
-        <strong>{item.query_id}</strong>
-        <p>{item.query}</p>
-      </div>
-      <div className="trigger-pills">
-        <StatusPill value={item.should_trigger ? "should_trigger" : "negative"} />
-        <StatusPill value={item.triggered ? "triggered" : "not_triggered"} />
-        <StatusPill value={item.pass ? "matched" : "mismatch"} label={item.pass ? "Matched" : "Mismatch"} />
-      </div>
-      <div className="evidence-paths">
-        <span>{item.duration_ms} ms</span>
-        <small>stdout: {item.stdout_path}</small>
-        <small>stderr: {item.stderr_path}</small>
-        {item.error && <small className="warning">error: {item.error}</small>}
-      </div>
-    </div>
+    <tr className="trigger-result-row">
+      <td>
+        <div className="trigger-query-cell">
+          <strong>{item.query}</strong>
+          <small>{item.query_id}</small>
+          {item.error && <span className="warning">error: {item.error}</span>}
+        </div>
+      </td>
+      <td><span className="trigger-token">{expected}</span></td>
+      <td><span className="trigger-token">{actual}</span></td>
+      <td><StatusPill value={item.pass ? "passed" : "failed"} label={verdict} /></td>
+      <td><strong className="trigger-duration">{item.duration_ms} ms</strong></td>
+      <td>
+        <details className="trigger-artifacts">
+          <summary>查看路径</summary>
+          <small>stdout: {item.stdout_path}</small>
+          <small>stderr: {item.stderr_path}</small>
+        </details>
+      </td>
+    </tr>
   );
 }
 
@@ -2451,7 +2616,7 @@ function AssessmentPolicyPanel() {
       </div>
       <div className="policy-list">
         <div><strong>Scan</strong><p>结构、安全与维护风险，独立展示 findings 和风险等级。</p></div>
-        <div><strong>Trigger</strong><p>真实 Runner 触发评测，展示 matched expectations 和触发分数。</p></div>
+        <div><strong>Trigger</strong><p>真实 Runner 触发评测，按每条 query 的预期 / 实际 / 判定计算通过率。</p></div>
         <div><strong>Effect</strong><p>执行 with-skill 与 baseline 对照，通过 assertions 和 Judge 判断质量提升，并展示成本效率证据。</p></div>
       </div>
     </div>

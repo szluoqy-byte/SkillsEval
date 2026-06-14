@@ -110,6 +110,10 @@ export const api = {
   runTaskNow: (id: string) => request<EvaluationTask>(`/api/tasks/${id}/run-now`, { method: "POST" }),
   task: (id: string) => request<EvaluationTask>(`/api/tasks/${id}`),
   taskEvidenceDetail: (id: string) => request<TaskEvidenceDetail>(`/api/tasks/${id}/evidence-detail`),
+  reviewScanFinding: (taskId: string, findingId: string, body: { review_severity: string; review_note?: string }) =>
+    request<TaskEvidenceDetail>(`/api/tasks/${taskId}/scan-findings/${findingId}/review`, { method: "PUT", body: JSON.stringify(body) }),
+  clearScanFindingReview: (taskId: string, findingId: string) =>
+    request<TaskEvidenceDetail>(`/api/tasks/${taskId}/scan-findings/${findingId}/review`, { method: "DELETE" }),
   scoringWeights: () => request<ScoringWeight[]>("/api/settings/scoring-weights"),
   updateScoringWeights: (weights: ScoringWeight[]) =>
     request<ScoringWeight[]>("/api/settings/scoring-weights", { method: "PUT", body: JSON.stringify({ weights }) }),

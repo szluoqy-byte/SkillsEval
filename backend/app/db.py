@@ -312,6 +312,15 @@ def init_db(db_path: Path | None = None) -> None:
         job_columns = {row["name"] for row in conn.execute("PRAGMA table_info(evaluation_set_generation_jobs)").fetchall()}
         if job_columns and "progress_message" not in job_columns:
             conn.execute("ALTER TABLE evaluation_set_generation_jobs ADD COLUMN progress_message TEXT NOT NULL DEFAULT ''")
+        finding_columns = {row["name"] for row in conn.execute("PRAGMA table_info(findings)").fetchall()}
+        if finding_columns and "review_severity" not in finding_columns:
+            conn.execute("ALTER TABLE findings ADD COLUMN review_severity TEXT")
+        if finding_columns and "review_note" not in finding_columns:
+            conn.execute("ALTER TABLE findings ADD COLUMN review_note TEXT NOT NULL DEFAULT ''")
+        if finding_columns and "reviewed_at" not in finding_columns:
+            conn.execute("ALTER TABLE findings ADD COLUMN reviewed_at TEXT")
+        if finding_columns and "reviewed_by" not in finding_columns:
+            conn.execute("ALTER TABLE findings ADD COLUMN reviewed_by TEXT")
 
 
 def seed_db(db_path: Path | None = None) -> None:
