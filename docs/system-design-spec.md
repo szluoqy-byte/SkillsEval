@@ -8,10 +8,10 @@
 
 SkillsEval 是一个第三方独立 skills 评测平台。它的核心目标不是复制某个开源评测工具，而是把不同来源的 skill 包、评测集、运行任务、评分证据和版本结果沉淀成可比较、可复核、可追踪的产品系统。
 
-平台围绕四阶段评测链路展开：
+平台围绕三类指标展开：
 
 ```text
-静态扫描 -> 触发评测 -> 效果评测 -> 性能评测
+Scan -> Trigger -> Effect
 ```
 
 MVP 的目标：
@@ -19,7 +19,7 @@ MVP 的目标：
 - 管理 Skill 与 Skill Version。
 - 为每个 Skill 维护一个绑定的 Evaluation Set。
 - 支持 Trigger Queries 与 Effect Cases 在同一 Evaluation Set 页面下独立辅助生成、导入、增删改查。
-- 支持创建评测任务，运行或模拟完整四阶段评测。
+- 支持创建评测任务，先运行真实 Scan 与 Trigger；Effect 后续逐步实现，performance 归入 Effect 的效率子指标。
 - 保存评测结果、评分指标、findings 和运行证据。
 - 在 Skill Detail、任务详情和 Overview 榜单中消费评测结论。
 
@@ -51,12 +51,12 @@ Skills 管理
 
 页面职责：
 
-- Overview：展示系统整体指标和 Top 10 Skills by Category。
+- Overview：展示系统整体指标和 Recommended Skills by Category。
 - Skills 管理：管理 skill、版本、最近评测结论和评测集入口。
-- Skill Detail Summary：展示版本评测结果、最新 suggestion、四阶段分、关键风险、评测证据摘要。
+- Skill Detail Summary：展示版本评测结果、最新 suggestion、Scan / Trigger / Effect 三类指标、关键风险和评测证据摘要。
 - Skill Detail Evaluation Sets：维护当前 Skill 绑定的 Trigger Queries 与 Effect Cases 定义，两类数据在同一页面下独立操作。
 - 评测任务管理：管理任务队列、运行状态和历史任务。
-- 任务详情：承载四阶段评估方法、阶段结果、with-skill / without-skill 对照、findings 和评测证据。
+- 任务详情：承载 Scan / Trigger / Effect 评估方法、指标结果、findings 和评测证据。
 
 重要边界：
 
@@ -97,13 +97,13 @@ Evaluation Worker
   +--> Evidence Storage
 ```
 
-MVP 推荐技术选型待讨论：
+MVP 技术选型：
 
-- 前端：React + TypeScript。
-- 后端：Node.js / Python 二选一。
-- 数据库：SQLite 起步或 Postgres 起步。
+- 前端：Vite + React + TypeScript。
+- 后端：FastAPI。
+- 数据库：SQLite 起步，后续可迁移 Postgres。
 - 证据存储：本地文件目录起步，后续抽象到对象存储。
-- 任务调度：进程内队列起步，后续替换为 BullMQ、Celery、Temporal 或云任务系统。
+- 任务调度：进程内 worker 起步，后续替换为 Celery、Temporal 或云任务系统。
 
 ## 4. 核心领域模型
 
@@ -213,6 +213,7 @@ Import Draft 字段：
 约束：
 
 - 所有评测运行绑定 `skill_version_id`，避免历史结论被后续文件变化污染。
+- `static_scan_status` 是兼容历史数据的内部枚举；面向用户展示为 `Not scanned | No active findings | Findings | Critical risk`，Skill 整体只做评分、风险提示和推荐等级，不使用 pass/fail 语义。
 - MVP 使用 `(skill_id, version)` 做唯一约束；如果同一个 Skill 下版本号已存在，确认导入时直接提示“该版本已存在”。
 - Skill Version 一旦创建不可覆盖；若用户修改 version 或元信息，应创建新的确认流程或取消本次 Import Draft。
 - hash 与完整 file tree 可作为后续增强或调试元信息，不作为 MVP 去重主链路。
@@ -357,16 +358,16 @@ Effect Cases 用于判断 skill 被使用后是否真的改善任务结果。
   "id": "run_001",
   "task_id": "task_2481",
   "status": "queued | running | completed | failed | canceled",
-  "current_stage": "static_scan | trigger_eval | effect_eval | performance_eval | done",
-  "overall_score": 95.6,
+  "current_stage": "static_scan | trigger_eval | effect_eval | done",
+  "overall_score": null,
   "recommendation": "recommended | usable | review_required | not_recommended",
   "result_summary": {
-    "static_score": 98,
+    "scan_score": 98,
+    "scan_status": "passed | warning | critical",
     "trigger_score": 94,
-    "effect_score": 96,
-    "performance_score": 88,
-    "skill_lift": 0.21,
-    "cost_usd": 1.42
+    "trigger_matched_queries": 18,
+    "trigger_total_queries": 20,
+    "effect_status": "pending"
   },
   "artifact_root": "data/runs/run_001/",
   "created_at": "2026-06-08T00:00:00Z",
@@ -409,7 +410,7 @@ Summary 回答“这次评测发生了什么”，只解释结果，不提出具
 {
   "run_id": "run_001",
   "text": "该版本整体表现较好，主要问题集中在 hard negative 误触发和缺失文件场景下的输出稳定性。with-skill 相比 baseline 有明显提升，但在高噪声输入下 token 成本偏高。",
-  "weak_metrics": ["trigger_score", "performance_score"],
+  "weak_metrics": ["scan", "trigger", "effect"],
   "risk_level": "low | medium | high",
   "created_at": "2026-06-08T00:20:00Z"
 }
@@ -515,14 +516,13 @@ pending -> running -> completed
 static_scan
 trigger_eval
 effect_eval
-performance_eval
 ```
 
 MVP 决策：
 
 - 即使 skill 存在安全风险，默认仍允许动态评测。
-- 静态扫描风险不阻断后续阶段，但会影响 score、recommendation 和风险展示。
-- 如果某阶段缺失，不重分配权重；结果中明确显示缺失阶段。
+- 静态扫描风险不阻断 Trigger，但会影响 recommendation 和风险展示。
+- Effect 未实现时展示 `pending`，不合并为单一总分。
 
 ### 5.3 Retry 设计
 
@@ -595,12 +595,21 @@ Runner 负责把同一套评测输入交给不同 agent 或模型运行，并返
 
 产品层用户感知的是“运行环境 Runner”，而不是分开的 runner 和 model。一个 Runner Environment 是平台预置组合，包含：
 
-- 执行器类型，例如 Claude Code、Codex Runner、本地 CLI、API Runner。
-- 被测模型，例如 MiniMax 2.7、GPT-5、Qwen3 Coder。
+- 执行器类型，例如 OpenCode CLI、Claude Code、Codex Runner、本地 CLI、API Runner。
+- 被测模型，例如 `openai/gpt-5.3-codex-spark`、MiniMax 2.7、GPT-5、Qwen3 Coder。
 - 运行参数，例如 timeout、workspace、tool permissions。
-- 系统内置的 Judge Model 与评分逻辑引用。
 
-因此创建任务时只展示 Runner Environment，例如 `Claude Code + MiniMax 2.7`。Judge Model 和评分规则属于系统预置，不暴露给普通用户选择。
+因此创建任务时只展示 Runner Environment，例如 `OpenCode + GPT-5.3 Codex Spark`。Runner 只负责被测 agent/model 的真实执行，不再承载 Effect Judge 的模型选择。
+
+### 7.0 Model API 与模型角色
+
+系统设置维护独立的第三方模型 API 配置：
+
+- `Model API Provider`：保存 provider name、接口格式、base_url、api_key、enabled。接口格式支持 `openai_compatible` 与 `anthropic`。
+- `Model Profile`：保存 provider 下的具体模型，例如 `deepseek-chat`、`deepseek-reasoner`。
+- `Model Roles`：保存全局裁判模型与数据模型选择。
+
+Effect 的 LLM Judge 使用全局裁判模型。后续 AI 辅助生成 Trigger Queries / Effect Cases 时使用全局数据模型。API Key 本地 MVP 保存到 SQLite，但后端 API 不回显明文，只返回是否已配置与掩码。
 
 ### 7.1 Runner 输入
 
@@ -615,7 +624,7 @@ Runner 负责把同一套评测输入交给不同 agent 或模型运行，并返
   "prompt": "检查 files/customer_service_evalset.xlsx 中的评测集质量...",
   "files": ["data/eval_sets/evalset_001/files/customer_service_evalset.xlsx"],
   "workspace_dir": "data/runs/run_001/workspaces/case_001/with_skill/",
-  "runner_environment": "Claude Code + MiniMax 2.7",
+  "runner_environment": "OpenCode + GPT-5.3 Codex Spark",
   "timeout_seconds": 120
 }
 ```
@@ -650,19 +659,15 @@ Runner 负责把同一套评测输入交给不同 agent 或模型运行，并返
 
 ### 7.3 Runner Environment 类型
 
-MVP 待选：
+MVP 已选：
 
-- `mock + mock_model`：用于前端和流程开发。
-- `local_cli + qwen3_coder`：调用本地命令。
-- `codex_runner + gpt_5`：Codex runner 组合。
-- `claude_code + minimax_2_7`：Claude Code 组合。
+- `opencode_cli + openai/gpt-5.3-codex-spark`：调用本机 OpenCode CLI 执行真实 trigger 评测。
+
+后续可扩展：
+
+- `local_cli + configured_model`：调用本地命令。
+- `claude_code + configured_model`：Claude Code 组合。
 - `api_runner + configured_model`：通用模型 API 组合。
-
-建议 MVP：
-
-1. 先实现 `mock` runner。
-2. 再实现一个真实 runner。
-3. Runner Environment registry 保持可扩展。
 
 ## 8. Assertion Engine 与 LLM Judge
 
@@ -754,7 +759,7 @@ LLM Judge 输出：
 }
 ```
 
-## 9. 四阶段评测设计
+## 9. 三类指标设计
 
 ### 9.1 静态扫描
 
@@ -772,7 +777,7 @@ LLM Judge 输出：
 
 - `findings.json`
 - `static_metrics.json`
-- `static_score`
+- `scan_score`
 
 规则分组：
 
@@ -785,13 +790,23 @@ LLM Judge 输出：
 MVP 评分：
 
 ```text
-static_score = clamp(100 - critical_count * 25 - warning_count * 10 - info_count * 2, 0, 100)
+static_score = clamp(
+  100
+  - critical_count * 25
+  - major_count * 10
+  - minor_count * 3
+  - info_count * 1,
+  0,
+  100
+)
 ```
 
-待讨论：
+MVP 决策：
 
-- critical finding 是否设置推荐等级上限。
-- 是否允许用户配置 ignore / allowlist。
+- 真实规则引擎只在评测任务的 `static_scan` 阶段运行，上传导入阶段不阻断。
+- 命中 critical finding 不阻断后续动态评测，但 recommendation 最高降为 `review_required`。
+- 规则明细、severity 归一、artifact 格式和评分口径见 [static-scan-rules-design.md](static-scan-rules-design.md)。
+- MVP 不提供 ignore / allowlist / 规则开关。
 
 ### 9.2 触发评测
 
@@ -846,7 +861,8 @@ MVP 规则：
 
 目标：
 
-- 判断使用 skill 后任务结果是否更好。
+- 判断使用 skill 后任务结果是否更好，并解释这份提升是否值得成本。
+- `expected_output` 是目标说明；`assertions` 是自动化判定单元。
 
 执行：
 
@@ -863,8 +879,15 @@ without_skill
 2. 拷贝 case files。
 3. 用 skill 运行 prompt。
 4. 不用 skill 运行同一 prompt。
-5. 对两组输出分别执行 assertions 两级判定。
-6. 聚合 pass_rate、score、delta。
+5. 对两组输出分别执行 assertions 分层判定。
+6. 聚合 pass_rate、score、lift、成本效率分类。
+
+Assertion 判定：
+
+- `deterministic`：内置 DSL 可直接判定，例如 `contains`、`does not contain`、`matches regex`、`is valid json`、`file exists`、`file contains`、`tool called`、`skill invoked`。
+- `llm_judge`：确定性规则无法判定，或 assertion 明确使用 `judge:` 前缀时，交给系统设置里的全局裁判模型。
+- `hybrid`：同一 case 中可混合 deterministic 与 LLM Judge。
+- MVP 不执行用户上传的任意 Python/script assertion。
 
 输出：
 
@@ -873,16 +896,23 @@ without_skill
   "case_id": "evalset-quality-check",
   "with_skill": {
     "pass_rate": 1.0,
-    "score": 100,
-    "output_path": "effect/outputs/case_with.txt"
+    "assertion_results": [
+      {
+        "text": "contains \"valid\"",
+        "passed": true,
+        "method": "deterministic",
+        "evidence": "Substring found: 'valid'",
+        "confidence": 1.0,
+        "uncertain": false
+      }
+    ]
   },
   "without_skill": {
-    "pass_rate": 0.67,
-    "score": 67,
-    "output_path": "effect/outputs/case_without.txt"
+    "pass_rate": 0.67
   },
   "delta_pass_rate": 0.33,
-  "method": "deterministic + llm_judge"
+  "non_discriminating_assertions": [],
+  "regression_assertions": []
 }
 ```
 
@@ -891,15 +921,19 @@ without_skill
 - `with_skill_pass_rate`
 - `without_skill_pass_rate`
 - `skill_lift`
-- `assertion_pass_rate`
-- `llm_judge_usage_rate`
-- `case_failure_types`
+- `assertions_passed`
+- `assertions_total`
+- `deterministic_assertions`
+- `judge_assertions`
+- `uncertain_assertions`
+- `non_discriminating_assertions`
+- `regression_assertions`
 
-### 9.4 性能评测
+### 9.4 Effect 成本效率子指标
 
 目标：
 
-- 判断效果提升是否值得成本。
+- 判断效果提升是否值得成本。该能力归入 Effect，不再作为独立一级指标。
 
 指标：
 
@@ -912,6 +946,7 @@ without_skill
 - tokens_per_passed_assertion
 - quality_delta
 - cost_delta_pct
+- cost_efficiency_classification
 
 输出：
 
@@ -922,48 +957,33 @@ without_skill
   "mean_tool_calls": 5.2,
   "estimated_cost_usd": 1.42,
   "tokens_per_passed_assertion": 612,
-  "cost_efficiency": "efficient | acceptable | watch | poor"
+  "cost_efficiency_classification": "PARETO_BETTER | QUALITY_UP_COST_UP | QUALITY_UP_COST_NEUTRAL | PARETO_WORSE | NO_MEANINGFUL_DELTA"
 }
 ```
 
-## 10. 综合评分
+## 10. 推荐策略
 
-MVP 推荐四阶段权重：
+MVP 不再追求单一 `overall_score`。新任务保留 `overall_score = null` 作为 legacy 兼容字段，前端和榜单使用 Scan / Trigger / Effect 三类指标。
 
-```text
-overall_score =
-  static_score * 0.20 +
-  trigger_score * 0.25 +
-  effect_score * 0.40 +
-  performance_score * 0.15
-```
+三类指标：
 
-说明：
-
-- 静态扫描是信任底座，但不能替代真实效果。
-- 触发评测决定 skill 是否能被正确使用。
-- 效果评测最能代表 skill 价值，权重最高。
-- 性能评测影响推荐级别，但不应压过安全与效果。
-
-缺失阶段：
-
-- 不做简单权重重分配。
-- 展示缺失阶段，并降低推荐等级。
+- Scan：结构、安全、权限和可维护性风险。
+- Trigger：真实 OpenCode 触发评测的 matched expectations。
+- Effect：真实 with-skill / baseline 效果评测，包含 assertion 判定、Judge 裁决和成本效率证据。
 
 推荐等级：
 
 ```text
-Recommended: overall >= 90 且无 critical active finding
-Usable: overall >= 80
-Review Required: overall >= 70 或存在关键风险
-Not Recommended: overall < 70 或 effect_score 明显低于 baseline
+Recommended: Scan 无 critical，Trigger >= 80，Effect >= 80，skill_lift > 0，且不是 PARETO_WORSE
+Usable: Scan 无 critical，Trigger >= 80，Effect >= 60
+Review Required: Scan warning/critical，Trigger 50-79，Effect 50-79，Judge uncertain 过多，或无 Effect Cases
+Not Recommended: 无 Trigger Queries，Trigger < 50，Effect < 50，运行失败，或 with-skill 明显劣于 baseline
 ```
 
-待讨论：
+MVP 决策：
 
-- critical finding 是否直接让最高等级不超过 Review Required。
-- LLM Judge score 如何换算为 assertion score。
-- effect_score 是否必须包含 baseline。
+- 任一 critical finding 会把最高 recommendation 限制为 `review_required`，但不阻断 Trigger。
+- 新任务仍写 `overall_score = null`，不把 Scan / Trigger / Effect 合并为单一分。
 
 ## 11. 证据存储
 
@@ -1282,7 +1302,7 @@ MVP 暂不设计复杂系统失败处理，但需要保留错误字段，便于�
 - 已评测 Skills 数
 - 评测任务数量
 - 用户数量
-- Top 10 Skills by Category
+- Recommended Skills by Category
 
 ### 16.2 Skills 管理
 
@@ -1294,7 +1314,7 @@ MVP 暂不设计复杂系统失败处理，但需要保留错误字段，便于�
 展示：
 
 - Skill 卡片
-- score
+- Scan / Trigger / Effect 三类指标
 - latest version
 - category
 - status
@@ -1312,7 +1332,7 @@ MVP 暂不设计复杂系统失败处理，但需要保留错误字段，便于�
 
 - 版本评测结果
 - 最新 suggestion
-- 四阶段评测分
+- Scan / Trigger / Effect 三类指标
 - 风险摘要
 - 评测证据摘要
 
@@ -1455,8 +1475,8 @@ MVP 暂不设计复杂系统失败处理，但需要保留错误字段，便于�
 4. assertions 确定性语法第一版支持哪些：contains、does not contain、regex、JSON schema、结构字段检查的优先级。
 5. LLM Judge 的默认 rubric 与 prompt 模板。
 6. LLM Judge 结果是否缓存，重跑时是否复用。
-7. 第一版真实 Runner Environment 选哪一个：Claude Code + MiniMax 2.7、Codex Runner + GPT-5 或 Local CLI + Qwen3 Coder。
-8. trigger activation signal 如何从 transcript、tool calls 或 runner metadata 中识别。
+7. effect_eval 的第一版断言执行和 LLM Judge 如何落地。
+8. Effect 效率子指标的 token、耗时、成本如何从 runner telemetry 采集。
 9. static scanner 第一版系统预置规则范围。
 10. retry 是否进入 MVP；如果进入，retry 与原 task/run 的关系。
 11. API 错误码规范。

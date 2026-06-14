@@ -26,16 +26,16 @@ const variants = {
 };
 
 const topSkills = [
-  ["1", "analytical-report", "Data & Analytics · v1.2.0", "95.6", "98", "92", "评测集 2/3 ready"],
-  ["2", "pdf-form-auditor", "Documents · v0.9.4", "93.8", "94", "91", "1 critical fixed"],
-  ["3", "sheet-reconcile", "Spreadsheets · v2.1.0", "91.4", "90", "88", "low cost delta"],
-  ["4", "code-review-pack", "Developer Tools · v1.0.7", "90.5", "86", "93", "trigger stable"],
-  ["5", "workflow-summarizer", "Ops · v1.4.2", "89.7", "91", "84", "needs perf run"],
-  ["6", "contract-clause-check", "Legal · v0.8.8", "88.9", "83", "90", "review required"],
-  ["7", "market-research-brief", "Research · v1.3.1", "87.6", "89", "82", "fresh 2h ago"],
-  ["8", "ppt-structure-polish", "Presentations · v1.1.0", "86.8", "85", "81", "suite draft"],
-  ["9", "ticket-triage-agent", "Support · v0.7.6", "85.9", "82", "87", "10 hard negatives"],
-  ["10", "image-alt-text", "Accessibility · v1.0.0", "84.7", "88", "79", "cost efficient"],
+  ["1", "analytical-report", "Data & Analytics · v1.2.0", "95.6", "98", "92", "Ready"],
+  ["2", "sheet-reconcile", "Data & Analytics · v2.1.0", "91.4", "90", "88", "Running"],
+  ["3", "metric-variance-brief", "Data & Analytics · v1.4.0", "90.8", "92", "89", "Ready"],
+  ["4", "csv-quality-auditor", "Data & Analytics · v0.8.5", "89.9", "87", "91", "Risk noted"],
+  ["5", "revenue-forecast-pack", "Data & Analytics · v1.0.2", "89.1", "88", "90", "Ready"],
+  ["6", "dashboard-summary", "Data & Analytics · v1.7.3", "88.4", "86", "89", "Ready"],
+  ["7", "cohort-retention-readout", "Data & Analytics · v0.6.9", "87.8", "84", "88", "Draft set"],
+  ["8", "anomaly-root-cause", "Data & Analytics · v1.1.1", "86.9", "85", "87", "Ready"],
+  ["9", "pipeline-health-report", "Data & Analytics · v0.9.8", "86.1", "83", "86", "Fresh"],
+  ["10", "experiment-readout", "Data & Analytics · v1.0.0", "85.4", "84", "85", "Ready"],
 ];
 
 const defaultManagedSkills = [
@@ -71,7 +71,7 @@ const defaultManagedSkills = [
     score: "87.6",
     stage: ["89", "86", "88", "79"],
     status: "Report Ready",
-    risk: "Needs source citation review",
+    risk: "Source citation gaps",
     updated: "Yesterday",
     summary: "Collects source-backed competitive research and assembles a concise market brief.",
   },
@@ -82,7 +82,7 @@ const defaultManagedSkills = [
     version: "0.9.4",
     score: "93.8",
     stage: ["94", "91", "95", "83"],
-    status: "Review Required",
+    status: "Attention",
     risk: "1 critical fixed in v0.9.4",
     updated: "Jun 07",
     summary: "Reads PDF forms, checks required fields, and produces completion-risk summaries.",
@@ -118,8 +118,8 @@ const versionResults = [
 let evaluationTasks = [
   ["task_2481", "analytical-report", "Claude Code + MiniMax 2.7", "Completed", "95.6", "Today 09:20"],
   ["task_2482", "sheet-reconcile", "Codex Runner + GPT-5", "Running", "—", "Started 09:42"],
-  ["task_2479", "pdf-form-auditor", "Claude Code + MiniMax 2.7", "Review Pending", "93.8", "Jun 07"],
-  ["task_2471", "market-research-brief", "Local CLI + Qwen3 Coder", "Failed", "87.6", "Jun 07"],
+  ["task_2479", "pdf-form-auditor", "Claude Code + MiniMax 2.7", "Completed", "93.8", "Jun 07"],
+  ["task_2471", "market-research-brief", "Local CLI + Qwen3 Coder", "Queued", "—", "Jun 07"],
 ];
 
 const taskDetail = {
@@ -129,7 +129,6 @@ const taskDetail = {
   status: "Completed",
   score: "95.6",
   runner: "Claude Code + MiniMax 2.7",
-  suite: "analytical-report current suite",
   started: "Today 09:03",
   finished: "Today 09:20",
 };
@@ -210,14 +209,6 @@ let effectCases = [
   },
 ];
 
-const staticScanRules = [
-  ["Structure", "18", "SKILL.md, frontmatter, references, required files"],
-  ["Security", "27", "secrets, unsafe commands, sensitive paths"],
-  ["Permissions", "14", "tool scope, shell access, external writes"],
-  ["Supply chain", "11", "remote install, unpinned packages, script fetch"],
-  ["Prompt safety", "9", "prompt injection and unsafe delegation patterns"],
-];
-
 const latestSuggestions = [
   ["Trigger description", "Use this skill when the user asks for spreadsheet-backed metric narratives, variance analysis, or executive-ready analytical report sections.", "+8 hard-negative clarity"],
   ["Effect case", "Add one missing-column case where optional metrics are absent but totals can still be computed.", "+4 outcome coverage"],
@@ -229,6 +220,23 @@ const policyDecisions = [
   ["Trigger optimization", "Suggestion only", "Platform proposes wording changes without creating a new version."],
   ["LLM judge ranking", "Included", "Judge-backed scores can enter the leaderboard in MVP."],
 ];
+
+const skillCategories = [
+  "Data & Analytics",
+  "Documents & Knowledge",
+  "Developer Tools",
+  "Research & Web",
+  "Productivity & Office",
+  "Design & Media",
+  "Customer Support & CRM",
+  "DevOps & Cloud",
+  "Security & Compliance",
+  "Finance & Business",
+  "Education & Training",
+  "Communication & Collaboration",
+];
+
+let currentImportDraft = null;
 
 function loadManagedSkills() {
   try {
@@ -293,6 +301,124 @@ function topSkillsRows() {
   `).join("");
 }
 
+function overviewMetricCards() {
+  return [
+    ["Skills 总数", "186", "+18 本月", "boxes"],
+    ["已评测 Skills 数", "128", "四阶段报告完成", "badge-check"],
+    ["评测任务数量", "342", "含历史与复评任务", "clipboard-check"],
+    ["用户数量", "48", "三类角色覆盖", "users"],
+  ].map(([label, value, note, iconName]) => `
+    <article class="saas-metric">
+      <div class="metric-icon">${icon(iconName)}</div>
+      <span>${label}</span>
+      <strong>${value}</strong>
+      <small>${note}</small>
+    </article>
+  `).join("");
+}
+
+function categoryTabs() {
+  return [
+    ["Data & Analytics", "active"],
+    ["Documents & Knowledge", ""],
+    ["Developer Tools", ""],
+    ["Research & Web", ""],
+    ["Productivity", ""],
+  ].map(([label, state]) => `<button class="category-tab ${state}" type="button">${label}</button>`).join("");
+}
+
+function saasLeaderboardRows() {
+  return topSkills.map(([rank, name, meta, score, trigger, effect, note]) => `
+    <div class="leaderboard-row">
+      <div class="leaderboard-rank">${rank}</div>
+      <div class="leaderboard-skill">
+        <strong>${name}</strong>
+        <span>${meta}</span>
+      </div>
+      <div class="score-block primary-score">
+        <strong>${score}</strong>
+        <span>overall</span>
+      </div>
+      <div class="score-block secondary-score">
+        <strong>${trigger}</strong>
+        <span>trigger</span>
+      </div>
+      <div class="score-block secondary-score">
+        <strong>${effect}</strong>
+        <span>effect</span>
+      </div>
+      <span class="status-pill status-${note.toLowerCase().replaceAll(" ", "-")}">${note}</span>
+    </div>
+  `).join("");
+}
+
+function renderSaasOverview(v) {
+  return `
+    <div class="app-shell saas-home-shell">
+      <aside class="sidebar">${renderNav("overview")}</aside>
+      <main class="main saas-home-main">
+        <header class="saas-topbar">
+          <div>
+            <span class="eyebrow">SkillsEval / Overview</span>
+            <h1>Skills 评测平台概览</h1>
+            <p>蓝白 SaaS 风格首页打样：只展示系统整体运营情况和 Top 10 Skills by Category。</p>
+          </div>
+          <div class="actions">
+            <button class="btn">${icon("download")}导出榜单</button>
+            <button class="btn primary">${icon("book-open-check")}查看评测标准</button>
+          </div>
+        </header>
+
+        <section class="saas-hero">
+          <div class="hero-copy">
+            <span class="pill">${icon("sparkles")}Data & Analytics 默认榜单</span>
+            <h2>用统一的评测证据，找到当前最值得试用的 Skills</h2>
+            <p>排名默认按 overall_score；critical finding 不阻断进入榜单，但会在榜单和详情页显著标注。</p>
+          </div>
+          <div class="hero-panel">
+            <span>平台运行状态</span>
+            <strong>Stable</strong>
+            <small>last sync today 09:20</small>
+            <div class="hero-panel-grid">
+              <div><b>12</b><span>categories</span></div>
+              <div><b>42</b><span>samples</span></div>
+              <div><b>7d</b><span>freshness</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="saas-metric-grid">
+          ${overviewMetricCards()}
+        </section>
+
+        <section class="saas-content-grid overview-only">
+          <div class="panel leaderboard-panel">
+            <div class="panel-header leaderboard-header">
+              <div>
+                <h2>Top 10 Skills by Category</h2>
+                <p>Data & Analytics · ranked by overall_score · updated 09:20</p>
+              </div>
+              <span class="pill">${icon("badge-check")}sample size 42</span>
+            </div>
+            <div class="category-tabs">${categoryTabs()}</div>
+            <div class="leaderboard-table">
+              <div class="leaderboard-row header">
+                <span>#</span>
+                <span>Skill</span>
+                <span>Overall</span>
+                <span>Trigger</span>
+                <span>Effect</span>
+                <span>Status</span>
+              </div>
+              ${saasLeaderboardRows()}
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  `;
+}
+
 function stageBlock([staticScore, triggerScore, effectScore, performanceScore]) {
   return [
     ["Static scan", staticScore],
@@ -317,7 +443,7 @@ function tabs(active, skill) {
   const suffix = skill ? `?skill=${encodeURIComponent(skill.packageName)}` : "";
   const items = [
     ["summary", "Summary", `./product-cloud-skills.html${suffix}`],
-    ["evalsets", "Evaluation Sets", `./product-cloud-eval-sets.html${suffix}`],
+    ["evalsets", "Evaluation Set", `./product-cloud-eval-sets.html${suffix}`],
   ];
   return `
     <nav class="tabbar">
@@ -453,7 +579,6 @@ function skillCards() {
         </div>
         <div class="card-actions">
           <button class="icon-btn" type="button" data-skill-action="edit" data-skill="${skill.packageName}" title="编辑 ${skill.packageName}" aria-label="编辑 ${skill.packageName}">${icon("square-pen")}</button>
-          <button class="icon-btn" type="button" data-skill-action="duplicate" data-skill="${skill.packageName}" title="复制 ${skill.packageName}" aria-label="复制 ${skill.packageName}">${icon("copy")}</button>
           <button class="icon-btn danger" type="button" data-skill-action="delete" data-skill="${skill.packageName}" title="删除 ${skill.packageName}" aria-label="删除 ${skill.packageName}">${icon("trash-2")}</button>
         </div>
       </div>
@@ -475,16 +600,17 @@ function renderSkillCards(v) {
             <span class="pill">${icon("tag")}category 手动选择</span>
             <button class="btn">${icon("sliders-horizontal")}筛选</button>
             <button class="btn">${icon("search")}搜索</button>
-            <button class="btn primary" data-skill-action="create">${icon("plus")}新建 Skill</button>
+            <button class="btn primary" data-skill-action="upload-zip">${icon("upload-cloud")}上传 Skill</button>
           </div>
         </header>
+        <input class="visually-hidden" type="file" accept=".zip,application/zip,application/x-zip-compressed" data-skill-zip-input>
 
         <section class="skill-workspace">
           <div class="management-summary">
             <div class="stat"><span>skills</span><strong>186</strong><small>按 skill_name 管理</small></div>
             <div class="stat"><span>ready</span><strong>128</strong><small>已有完整评测报告</small></div>
-            <div class="stat"><span>needs review</span><strong>4</strong><small>风险可见但不阻断评测</small></div>
-            <div class="stat"><span>draft suites</span><strong>11</strong><small>等待补齐 case</small></div>
+            <div class="stat"><span>attention</span><strong>4</strong><small>风险可见但不阻断评测</small></div>
+            <div class="stat"><span>draft sets</span><strong>11</strong><small>等待补齐 case</small></div>
           </div>
 
           <div class="filter-strip card-filter">
@@ -492,7 +618,7 @@ function renderSkillCards(v) {
             <span class="chip">Documents</span>
             <span class="chip">Developer Tools</span>
             <span class="chip">Research & Web</span>
-            <span class="chip">Review Required</span>
+            <span class="chip">Attention</span>
           </div>
 
           <section class="skill-card-grid" aria-label="Skills cards">
@@ -518,7 +644,7 @@ function renderSkillDetail(v, selected) {
           <div class="actions">
             <button class="btn" data-skill-action="edit" data-skill="${selected.packageName}">${icon("square-pen")}编辑</button>
             <button class="btn" data-skill-action="delete" data-skill="${selected.packageName}">${icon("trash-2")}删除</button>
-            <button class="btn primary">${icon("play")}Run Evaluation</button>
+            <button class="btn primary">${icon("play")}发起评测</button>
           </div>
         </header>
 
@@ -655,36 +781,17 @@ function renderEvaluationSets(v) {
       <main class="main">
         <header class="topbar">
           <div class="title">
-            <h1>Evaluation Sets</h1>
-            <p>${selected.packageName} · 维护当前 Skill 绑定的 trigger queries 和 effect cases 定义。</p>
+            <h1>Evaluation Set</h1>
+            <p>${selected.packageName} · 一个 Skill 绑定一个当前评测集，维护 trigger queries 和 effect cases。</p>
           </div>
           <div class="actions">
-            <span class="pill">${icon("link")}skill-bound suite</span>
-            <a class="btn primary" href="./product-cloud-tasks.html" data-link>${icon("play")}新建评测任务</a>
+            <span class="pill">${icon("link")}skill-bound current set</span>
+            <a class="btn primary" href="./product-cloud-tasks.html" data-link>${icon("play")}发起评测</a>
           </div>
         </header>
 
         <section class="skill-workspace">
           ${tabs("evalsets", selected)}
-
-          <div class="panel">
-            <div class="panel-header">
-              <div>
-                <h2>AWS 静态扫描规则</h2>
-                <p>系统预置规则，只读不可修改；当前评测集读取规则数量用于静态扫描。</p>
-              </div>
-              <span class="pill">${icon("lock")}system preset</span>
-            </div>
-            <div class="rules-grid">
-              ${staticScanRules.map(([group, count, desc]) => `
-                <div class="rule-card">
-                  <span>${group}</span>
-                  <strong>${count}</strong>
-                  <small>${desc}</small>
-                </div>
-              `).join("")}
-            </div>
-          </div>
 
           <div class="eval-case-layout">
             <div class="panel">
@@ -824,7 +931,7 @@ function renderEvaluationTasks(v) {
             <div class="stat"><span>queued</span><strong>12</strong><small>等待执行</small></div>
             <div class="stat"><span>running</span><strong>3</strong><small>正在评测</small></div>
             <div class="stat"><span>completed</span><strong>342</strong><small>历史任务</small></div>
-            <div class="stat"><span>review</span><strong>7</strong><small>需要查看结果</small></div>
+            <div class="stat"><span>scheduled</span><strong>7</strong><small>等待排队执行</small></div>
           </div>
 
           <div class="panel task-management-panel">
@@ -879,7 +986,6 @@ function renderTaskDetail(v) {
                 <p>任务详情承载评估方法、阶段结果和运行证据；Skill Detail 只消费最新结论和版本汇总。</p>
                 <div class="tag-row">
                   ${statusPill(taskDetail.status)}
-                  <span class="pill">${taskDetail.suite}</span>
                   <span class="pill">${taskDetail.started} - ${taskDetail.finished}</span>
                 </div>
               </div>
@@ -982,6 +1088,10 @@ function renderTaskDetail(v) {
 }
 
 function renderOverview(v) {
+  if (v.bodyClass === "style-c") {
+    return renderSaasOverview(v);
+  }
+
   return `
     <div class="app-shell">
       <aside class="sidebar">${renderNav("overview")}</aside>
@@ -1037,7 +1147,7 @@ function renderApp() {
   const titles = {
     overview: `SkillsEval Prototype - ${v.name}`,
     skills: "SkillsEval Prototype - Product Cloud Skills",
-    evalsets: "SkillsEval Prototype - Evaluation Sets",
+    evalsets: "SkillsEval Prototype - Evaluation Set",
     tasks: "SkillsEval Prototype - Evaluation Tasks",
     taskDetail: "SkillsEval Prototype - Evaluation Task Detail",
   };
@@ -1052,40 +1162,232 @@ function findSkill(packageName) {
   return managedSkills.find((skill) => skill.packageName === packageName);
 }
 
-function showSkillEditor(skill) {
-  const isEdit = Boolean(skill);
-  const draft = skill || {
-    packageName: "new-skill-pack",
-    category: "Data & Analytics",
-    version: "0.1.0",
-    score: "0.0",
-    stage: ["0", "0", "0", "0"],
-    status: "Imported",
-    risk: "Not scanned",
-    updated: "Just now",
-    summary: "Describe what this skill evaluates or improves.",
-  };
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function zipBaseName(fileName) {
+  return fileName.replace(/\\/g, "/").split("/").pop().replace(/\.zip$/i, "");
+}
+
+function directoryName(path) {
+  const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 2] : "";
+}
+
+function normalizeSkillName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+}
+
+function parseFrontmatter(text) {
+  const normalized = text.replace(/^\uFEFF/, "");
+  if (!normalized.startsWith("---")) return {};
+  const end = normalized.indexOf("\n---", 3);
+  if (end < 0) return {};
+  const raw = normalized.slice(3, end).trim();
+  const result = {};
+  raw.split(/\r?\n/).forEach((line) => {
+    const match = line.match(/^([A-Za-z0-9_.-]+):\s*(.*)$/);
+    if (!match) return;
+    const value = match[2].trim().replace(/^['"]|['"]$/g, "");
+    result[match[1]] = value;
+  });
+  return result;
+}
+
+function skillMdCandidates(zip) {
+  const allowed = [
+    /^SKILL\.md$/i,
+    /^[^/]+\/SKILL\.md$/i,
+    /^\.codex\/skills\/[^/]+\/SKILL\.md$/i,
+    /^\.claude\/skills\/[^/]+\/SKILL\.md$/i,
+  ];
+  return Object.values(zip.files)
+    .filter((entry) => !entry.dir)
+    .filter((entry) => allowed.some((pattern) => pattern.test(entry.name)));
+}
+
+function suggestedVersionFrom(fileName, frontmatter) {
+  if (frontmatter.version) return frontmatter.version;
+  if (frontmatter["metadata.version"]) return frontmatter["metadata.version"];
+  const versionMatch = zipBaseName(fileName).match(/(?:^|[-_@])v?(\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?)/);
+  return versionMatch ? versionMatch[1] : "";
+}
+
+async function parseSkillZip(file) {
+  if (!window.JSZip) {
+    return {
+      status: "failed",
+      sourceName: file.name,
+      blockingErrors: [{ code: "JSZIP_MISSING", message: "JSZip 未加载，无法解析 zip 包。" }],
+    };
+  }
+  try {
+    const zip = await window.JSZip.loadAsync(file);
+    const candidates = skillMdCandidates(zip);
+    if (candidates.length === 0) {
+      return {
+        status: "failed",
+        sourceName: file.name,
+        blockingErrors: [{ code: "SKILL_MD_NOT_FOUND", message: "包内未发现 SKILL.md，请确认上传的是单个 Skill zip 包。" }],
+      };
+    }
+    if (candidates.length > 1) {
+      return {
+        status: "failed",
+        sourceName: file.name,
+        blockingErrors: [{
+          code: "MULTIPLE_SKILL_MD",
+          message: "包内存在多个 SKILL.md，不符合单 Skill 包规范，请整理后重新上传。",
+          paths: candidates.map((entry) => entry.name),
+        }],
+      };
+    }
+
+    const skillMd = candidates[0];
+    const skillText = await skillMd.async("text");
+    const frontmatter = parseFrontmatter(skillText);
+    const fallbackName = directoryName(skillMd.name) || zipBaseName(file.name);
+    const suggestedName = normalizeSkillName(frontmatter.name || fallbackName) || normalizeSkillName(zipBaseName(file.name));
+    const fileTree = Object.values(zip.files)
+      .filter((entry) => !entry.dir)
+      .map((entry) => entry.name)
+      .sort();
+    return {
+      id: `import_${Date.now()}`,
+      status: "needs_user_input",
+      sourceName: file.name,
+      selectedRootPath: directoryName(skillMd.name) ? `${directoryName(skillMd.name)}/` : "",
+      skillMdPath: skillMd.name,
+      frontmatter,
+      suggestedSkillName: suggestedName,
+      suggestedDisplayName: frontmatter.name || suggestedName,
+      suggestedVersion: suggestedVersionFrom(file.name, frontmatter),
+      fileTree,
+      warnings: frontmatter.name ? [] : ["SKILL.md frontmatter 缺少 name，已使用目录名或 zip 文件名生成 skill_name。"],
+    };
+  } catch (error) {
+    return {
+      status: "failed",
+      sourceName: file.name,
+      blockingErrors: [{ code: "ZIP_PARSE_FAILED", message: `zip 解析失败：${error.message}` }],
+    };
+  }
+}
+
+function categoryOptions(selected = "") {
+  return [
+    `<option value="" ${selected ? "" : "selected"} disabled>请选择 category</option>`,
+    ...skillCategories.map((category) => `<option value="${escapeHtml(category)}" ${category === selected ? "selected" : ""}>${escapeHtml(category)}</option>`),
+  ].join("");
+}
+
+function skillVersionExists(skillName, version) {
+  const normalizedName = normalizeSkillName(skillName);
+  return managedSkills.some((skill) => normalizeSkillName(skill.packageName) === normalizedName && String(skill.version).trim() === String(version).trim());
+}
+
+function showImportError(result) {
+  const errors = result.blockingErrors || [];
   document.body.insertAdjacentHTML("beforeend", `
     <div class="modal-backdrop" data-modal>
-      <form class="skill-modal" data-skill-form data-mode="${isEdit ? "edit" : "create"}" data-original="${skill?.packageName || ""}">
+      <div class="skill-modal import-modal compact">
         <div class="modal-header">
           <div>
-            <h2>${isEdit ? "编辑 Skill" : "新建 Skill"}</h2>
-            <p>${isEdit ? draft.packageName : "创建后会出现在卡片管理页中。"}</p>
+            <h2>导入失败</h2>
+            <p>${escapeHtml(result.sourceName || "skill.zip")}</p>
+          </div>
+          <button class="icon-btn" type="button" data-modal-close aria-label="关闭">${icon("x")}</button>
+        </div>
+        <div class="import-error-list">
+          ${errors.map((error) => `
+            <div class="import-error">
+              <strong>${escapeHtml(error.code)}</strong>
+              <p>${escapeHtml(error.message)}</p>
+              ${error.paths ? `<ul>${error.paths.map((path) => `<li>${escapeHtml(path)}</li>`).join("")}</ul>` : ""}
+            </div>
+          `).join("")}
+        </div>
+        <div class="modal-actions">
+          <button class="btn primary" type="button" data-modal-close>知道了</button>
+        </div>
+      </div>
+    </div>
+  `);
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function showImportDraft(draft) {
+  currentImportDraft = draft;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-backdrop" data-modal>
+      <form class="skill-modal import-modal" data-import-confirm-form>
+        <div class="modal-header">
+          <div>
+            <h2>确认 Skill Import Draft</h2>
+            <p>${escapeHtml(draft.sourceName)} · ${escapeHtml(draft.skillMdPath)}</p>
+          </div>
+          <button class="icon-btn" type="button" data-modal-close aria-label="关闭">${icon("x")}</button>
+        </div>
+
+        <div class="import-summary">
+          <div><span>skill root</span><strong>${escapeHtml(draft.selectedRootPath || "/")}</strong></div>
+          <div><span>SKILL.md</span><strong>${escapeHtml(draft.skillMdPath)}</strong></div>
+          <div><span>files</span><strong>${draft.fileTree.length}</strong></div>
+        </div>
+
+        ${draft.warnings.length ? `<div class="import-warning">${draft.warnings.map((warning) => `<p>${escapeHtml(warning)}</p>`).join("")}</div>` : ""}
+
+        <label>skill_name<input name="skillName" value="${escapeHtml(draft.suggestedSkillName)}" required></label>
+        <label>display_name<input name="displayName" value="${escapeHtml(draft.suggestedDisplayName)}"></label>
+        <div class="form-grid">
+          <label>Version<input name="version" value="${escapeHtml(draft.suggestedVersion)}" placeholder="例如 1.2.0" required></label>
+          <label>Category<select name="category" required>${categoryOptions()}</select></label>
+        </div>
+        <p class="form-note">确认后只创建原型中的 Skill Version 卡片，不会自动触发静态扫描或完整评测。</p>
+        <div class="import-inline-error" data-import-inline-error hidden></div>
+        <div class="modal-actions">
+          <button class="btn" type="button" data-modal-close>取消</button>
+          <button class="btn primary" type="submit">确认导入</button>
+        </div>
+      </form>
+    </div>
+  `);
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function showSkillEditor(skill) {
+  if (!skill) return;
+  const draft = skill;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-backdrop" data-modal>
+      <form class="skill-modal" data-skill-form data-mode="edit" data-original="${skill.packageName}">
+        <div class="modal-header">
+          <div>
+            <h2>编辑 Skill</h2>
+            <p>${draft.packageName}</p>
           </div>
           <button class="icon-btn" type="button" data-modal-close aria-label="关闭">${icon("x")}</button>
         </div>
         <label>skill_name<input name="packageName" value="${draft.packageName}" required></label>
         <label>Category<input name="category" value="${draft.category}" required></label>
-        <div class="form-grid">
-          <label>Version<input name="version" value="${draft.version}" required></label>
-          <label>Score<input name="score" value="${draft.score}" required></label>
-        </div>
-        <label>Status<input name="status" value="${draft.status}" required></label>
+        <label>Version<input name="version" value="${draft.version}" readonly></label>
         <label>Summary<textarea name="summary" rows="4" required>${draft.summary}</textarea></label>
+        <p class="form-note">overall_score、status 和四阶段分数来自评测任务结果，不能在 Skill 信息里手动编辑。</p>
         <div class="modal-actions">
           <button class="btn" type="button" data-modal-close>取消</button>
-          <button class="btn primary" type="submit">${isEdit ? "保存修改" : "创建 Skill"}</button>
+          <button class="btn primary" type="submit">保存修改</button>
         </div>
       </form>
     </div>
@@ -1122,14 +1424,14 @@ function showTaskCreator() {
         <div class="modal-header">
           <div>
             <h2>新建评测任务</h2>
-            <p>选择 Skill、版本和运行环境；系统默认执行完整评测。</p>
+            <p>选择 Skill、版本和运行环境；系统自动使用该 Skill 绑定的当前评测集。</p>
           </div>
           <button class="icon-btn" type="button" data-modal-close aria-label="关闭">${icon("x")}</button>
         </div>
         <label>Skill<select name="skill" required>${skillOptions}</select></label>
         <div class="form-grid">
           <label>Version<input name="version" value="latest" required></label>
-          <label>Evaluation Sets<input name="suite" value="Current skill-bound suite" readonly></label>
+          <label>Evaluation Mode<input name="mode" value="Full evaluation" readonly></label>
         </div>
         <label>Runner
           <select name="runner" required>
@@ -1357,31 +1659,82 @@ document.addEventListener("click", (event) => {
   if (!action) return;
   event.preventDefault();
   const skill = findSkill(action.dataset.skill);
-  if (action.dataset.skillAction === "create") {
-    showSkillEditor();
+  if (action.dataset.skillAction === "upload-zip") {
+    document.querySelector("[data-skill-zip-input]")?.click();
   }
   if (action.dataset.skillAction === "edit" && skill) {
     showSkillEditor(skill);
-  }
-  if (action.dataset.skillAction === "duplicate" && skill) {
-    const copy = {
-      ...skill,
-      packageName: `${skill.packageName}-copy`,
-      version: "0.1.0",
-      score: "0.0",
-      status: "Imported",
-      updated: "Just now",
-    };
-    managedSkills.unshift(copy);
-    saveManagedSkills();
-    renderApp();
   }
   if (action.dataset.skillAction === "delete" && skill) {
     showDeleteConfirm(skill);
   }
 });
 
+document.addEventListener("change", async (event) => {
+  const input = event.target.closest("[data-skill-zip-input]");
+  if (!input) return;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  const result = await parseSkillZip(file);
+  if (result.status === "failed") showImportError(result);
+  else showImportDraft(result);
+});
+
 document.addEventListener("submit", (event) => {
+  const importForm = event.target.closest("[data-import-confirm-form]");
+  if (importForm) {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(importForm).entries());
+    const skillName = normalizeSkillName(data.skillName);
+    const version = String(data.version || "").trim();
+    const category = String(data.category || "").trim();
+    const inlineError = importForm.querySelector("[data-import-inline-error]");
+    const showError = (message) => {
+      inlineError.hidden = false;
+      inlineError.textContent = message;
+    };
+    if (!skillName) {
+      showError("skill_name 不能为空。");
+      return;
+    }
+    if (!version) {
+      showError("version 必须填写。");
+      return;
+    }
+    if (!category) {
+      showError("category 必须选择。");
+      return;
+    }
+    if (skillVersionExists(skillName, version)) {
+      showError(`版本已存在：${skillName} v${version}。请修改 version 后再确认导入。`);
+      return;
+    }
+    const displayName = String(data.displayName || "").trim() || skillName;
+    const summary = currentImportDraft?.frontmatter?.description || `Imported from ${currentImportDraft?.sourceName || "skill.zip"}.`;
+    const importedSkill = {
+      packageName: skillName,
+      title: displayName,
+      category,
+      version,
+      score: "0.0",
+      stage: ["0", "0", "0", "0"],
+      status: "Imported",
+      risk: "Not scanned",
+      updated: "Just now",
+      summary,
+    };
+    const existingSkillIndex = managedSkills.findIndex((item) => normalizeSkillName(item.packageName) === skillName);
+    if (existingSkillIndex >= 0) managedSkills[existingSkillIndex] = { ...managedSkills[existingSkillIndex], ...importedSkill };
+    else managedSkills.unshift(importedSkill);
+    saveManagedSkills();
+    currentImportDraft = null;
+    closeModal();
+    window.history.pushState({}, "", `./product-cloud-skills.html?skill=${encodeURIComponent(skillName)}`);
+    renderApp();
+    return;
+  }
+
   const taskForm = event.target.closest("[data-task-form]");
   if (taskForm) {
     event.preventDefault();
@@ -1433,24 +1786,25 @@ document.addEventListener("submit", (event) => {
   if (!form) return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
+  const original = form.dataset.original;
+  const index = managedSkills.findIndex((item) => item.packageName === original);
+  const previous = index >= 0 ? managedSkills[index] : null;
   const skill = {
     packageName: data.packageName.trim(),
     title: data.packageName.trim(),
     category: data.category.trim(),
     version: data.version.trim(),
-    score: data.score.trim(),
-    stage: ["0", "0", "0", "0"],
-    status: data.status.trim(),
-    risk: "Not scanned",
-    updated: "Just now",
+    score: previous?.score || "0.0",
+    stage: previous?.stage || ["0", "0", "0", "0"],
+    status: previous?.status || "Imported",
+    risk: previous?.risk || "Not scanned",
+    updated: previous?.updated || "Just now",
     summary: data.summary.trim(),
   };
-  const original = form.dataset.original;
-  const index = managedSkills.findIndex((item) => item.packageName === original);
   if (form.dataset.mode === "edit" && index >= 0) {
     managedSkills[index] = { ...managedSkills[index], ...skill };
   } else {
-    managedSkills.unshift(skill);
+    return;
   }
   saveManagedSkills();
   closeModal();
