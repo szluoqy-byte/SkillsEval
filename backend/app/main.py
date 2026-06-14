@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .db import connect, encode_json, init_db, now_iso, row_to_dict, rows_to_dicts, seed_db
+from .eval_generation import confirm_generation_job, create_generation_job, delete_generation_job, get_job, list_jobs_for_skill, run_generation_job
 from .evaluator import create_task, run_task
 from .importer import confirm_import_draft, create_import_draft, get_import_draft, new_id
 from .model_client import PROVIDER_TYPES, call_configured_model, normalize_base_url, sanitize_provider
@@ -44,6 +45,17 @@ class EffectCaseRequest(BaseModel):
     expected_output: str
     files: list[str] = []
     assertions: list[str] = []
+
+
+class GenerationJobRequest(BaseModel):
+    target: str
+    count: int
+    instruction: str = ""
+    include_negative: bool = True
+
+
+class GenerationConfirmRequest(BaseModel):
+    items: list[dict[str, Any]]
 
 
 class CreateTaskRequest(BaseModel):
@@ -861,7 +873,48 @@ def get_evaluation_set(skill_id: str) -> dict[str, Any]:
             raise HTTPException(status_code=404, detail="Evaluation set not found.")
         eval_set["trigger_queries"] = rows_to_dicts(conn.execute("SELECT * FROM trigger_queries WHERE eval_set_id = ? ORDER BY created_at", (eval_set["id"],)).fetchall())
         eval_set["effect_cases"] = rows_to_dicts(conn.execute("SELECT * FROM effect_cases WHERE eval_set_id = ? ORDER BY created_at", (eval_set["id"],)).fetchall())
+        eval_set["generation_jobs"] = list_jobs_for_skill(skill_id)
         return eval_set
+
+
+@app.get("/api/skills/{skill_id}/evaluation-set/generation-jobs")
+def generation_jobs(skill_id: str) -> list[dict[str, Any]]:
+    return list_jobs_for_skill(skill_id)
+
+
+@app.post("/api/skills/{skill_id}/evaluation-set/generation-jobs")
+def create_eval_generation_job(skill_id: str, request: GenerationJobRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    try:
+        job = create_generation_job(skill_id, request.target, request.count, request.instruction, request.include_negative)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if job["status"] == "queued":
+        background_tasks.add_task(run_generation_job, job["id"])
+    return job
+
+
+@app.get("/api/evaluation-set-generation-jobs/{job_id}")
+def evaluation_generation_job(job_id: str) -> dict[str, Any]:
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Generation job not found.")
+    return job
+
+
+@app.post("/api/evaluation-set-generation-jobs/{job_id}/confirm")
+def confirm_eval_generation_job(job_id: str, request: GenerationConfirmRequest) -> dict[str, Any]:
+    try:
+        return confirm_generation_job(job_id, request.items)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.delete("/api/evaluation-set-generation-jobs/{job_id}")
+def delete_eval_generation_job(job_id: str) -> dict[str, str]:
+    delete_generation_job(job_id)
+    return {"status": "deleted"}
 
 
 @app.post("/api/skills/{skill_id}/evaluation-set/trigger-queries")

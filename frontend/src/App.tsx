@@ -13,6 +13,7 @@ import {
   Plus,
   Settings,
   ShieldCheck,
+  Sparkles,
   Save,
   Trash2,
   UploadCloud,
@@ -21,7 +22,7 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { api } from "./api";
-import type { AssertionResult, Category, EffectCase, EffectCaseResult, EffectEvalEvidence, EvaluationTask, ImportDraft, ModelApiProvider, ModelProfile, ModelRoles, Runner, Skill, SkillFileContent, SkillFileEntry, SkillVersion, StageEvidenceDetail, StaticScanEvidence, TaskEvidenceDetail, TriggerEvalEvidence, TriggerEvalResult, TriggerQuery } from "./types";
+import type { AssertionResult, Category, EffectCase, EffectCaseResult, EffectEvalEvidence, EvaluationSetGenerationJob, EvaluationTask, GenerationDraftItem, GenerationTarget, ImportDraft, ModelApiProvider, ModelProfile, ModelRoles, Runner, Skill, SkillFileContent, SkillFileEntry, SkillVersion, StageEvidenceDetail, StaticScanEvidence, TaskEvidenceDetail, TriggerEvalEvidence, TriggerEvalResult, TriggerQuery } from "./types";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -756,7 +757,18 @@ function formatBytes(value?: number) {
 function EvaluationSetTab({ skillId }: { skillId: string }) {
   const queryClient = useQueryClient();
   const evaluationSet = useQuery({ queryKey: ["evaluation-set", skillId], queryFn: () => api.evaluationSet(skillId), enabled: !!skillId });
+  const generationJobs = useQuery({
+    queryKey: ["generation-jobs", skillId],
+    queryFn: () => api.generationJobs(skillId),
+    enabled: !!skillId,
+    refetchInterval: (query) => {
+      const jobs = query.state.data ?? [];
+      return jobs.some((job) => ["queued", "running"].includes(job.status)) ? 2000 : false;
+    },
+  });
   const [modal, setModal] = useState<null | "trigger" | "effect">(null);
+  const [generationTarget, setGenerationTarget] = useState<GenerationTarget | null>(null);
+  const [reviewJobId, setReviewJobId] = useState<string | null>(null);
   const [detail, setDetail] = useState<null | { type: "trigger"; item: TriggerQuery } | { type: "effect"; item: EffectCase }>(null);
   const [allModal, setAllModal] = useState<null | "trigger" | "effect">(null);
   const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>("all");
@@ -788,9 +800,26 @@ function EvaluationSetTab({ skillId }: { skillId: string }) {
     mutationFn: api.deleteEffectCase,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["evaluation-set", skillId] }),
   });
+  const createGeneration = useMutation({
+    mutationFn: (body: { target: GenerationTarget; count: number; instruction: string; include_negative?: boolean }) => api.createGenerationJob(skillId, body),
+    onSuccess: (job) => {
+      setGenerationTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["generation-jobs", skillId] });
+      queryClient.invalidateQueries({ queryKey: ["evaluation-set", skillId] });
+      if (job.status === "completed" || job.status === "failed") setReviewJobId(job.id);
+    },
+  });
+  const deleteGeneration = useMutation({
+    mutationFn: api.deleteGenerationJob,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["generation-jobs", skillId] });
+      queryClient.invalidateQueries({ queryKey: ["evaluation-set", skillId] });
+    },
+  });
 
   const triggerQueries = evaluationSet.data?.trigger_queries ?? [];
   const effectCases = evaluationSet.data?.effect_cases ?? [];
+  const jobs = generationJobs.data ?? evaluationSet.data?.generation_jobs ?? [];
   const positiveTriggers = triggerQueries.filter((item) => isEnabled(item.should_trigger)).length;
   const negativeTriggers = triggerQueries.length - positiveTriggers;
   const filteredTriggers = filterTriggers(triggerQueries, triggerFilter);
@@ -806,6 +835,11 @@ function EvaluationSetTab({ skillId }: { skillId: string }) {
       </div>
       {evaluationSet.isLoading ? <Loading /> : (
         <>
+          <GenerationStatusBar
+            jobs={jobs}
+            onOpen={(job) => setReviewJobId(job.id)}
+            onDelete={(job) => deleteGeneration.mutate(job.id)}
+          />
           <section className="eval-compact-summary">
             <CompactStat label="Trigger Queries" value={triggerQueries.length} />
             <CompactStat label="Should Trigger" value={positiveTriggers} />
@@ -823,6 +857,7 @@ function EvaluationSetTab({ skillId }: { skillId: string }) {
                 setTriggerPage(1);
               }}
               onAdd={() => setModal("trigger")}
+              onGenerate={() => setGenerationTarget("trigger_queries")}
               onViewAll={() => setAllModal("trigger")}
               onOpenDetail={(item) => setDetail({ type: "trigger", item })}
               onDelete={(id) => deleteTrigger.mutate(id)}
@@ -837,6 +872,7 @@ function EvaluationSetTab({ skillId }: { skillId: string }) {
                 setEffectPage(1);
               }}
               onAdd={() => setModal("effect")}
+              onGenerate={() => setGenerationTarget("effect_cases")}
               onViewAll={() => setAllModal("effect")}
               onOpenDetail={(item) => setDetail({ type: "effect", item })}
               onDelete={(id) => deleteEffect.mutate(id)}
@@ -897,6 +933,26 @@ function EvaluationSetTab({ skillId }: { skillId: string }) {
           error={addEffect.error?.message}
           onClose={() => setModal(null)}
           onSubmit={(body) => addEffect.mutate(body)}
+        />
+      )}
+      {generationTarget && (
+        <GenerationJobModal
+          target={generationTarget}
+          isPending={createGeneration.isPending}
+          error={createGeneration.error?.message}
+          onClose={() => setGenerationTarget(null)}
+          onSubmit={(body) => createGeneration.mutate(body)}
+        />
+      )}
+      {reviewJobId && (
+        <GenerationReviewModal
+          jobId={reviewJobId}
+          onClose={() => setReviewJobId(null)}
+          onConfirmed={() => {
+            setReviewJobId(null);
+            queryClient.invalidateQueries({ queryKey: ["evaluation-set", skillId] });
+            queryClient.invalidateQueries({ queryKey: ["generation-jobs", skillId] });
+          }}
         />
       )}
     </div>
@@ -964,6 +1020,7 @@ function TriggerCompactPanel({
   filter,
   onFilterChange,
   onAdd,
+  onGenerate,
   onViewAll,
   onOpenDetail,
   onDelete,
@@ -974,6 +1031,7 @@ function TriggerCompactPanel({
   filter: TriggerFilter;
   onFilterChange: (value: TriggerFilter) => void;
   onAdd: () => void;
+  onGenerate: () => void;
   onViewAll: () => void;
   onOpenDetail: (item: TriggerQuery) => void;
   onDelete: (id: string) => void;
@@ -981,7 +1039,7 @@ function TriggerCompactPanel({
   if (!items.length) {
     return (
       <div className="panel eval-compact-panel">
-        <EvalPanelHeader title="Trigger Queries" meta={`${filteredTotal}/${total} 条`} onAdd={onAdd} onViewAll={onViewAll} addLabel="新增 Trigger" canViewAll={total > 0} />
+        <EvalPanelHeader title="Trigger Queries" meta={`${filteredTotal}/${total} 条`} onAdd={onAdd} onGenerate={onGenerate} onViewAll={onViewAll} addLabel="新增 Trigger" canViewAll={total > 0} />
         <TriggerFilterTabs value={filter} onChange={onFilterChange} />
         <CompactEmpty title="暂无 Trigger Query" description="新增正向或负向触发样例后，触发评测会使用这些数据。" />
       </div>
@@ -989,7 +1047,7 @@ function TriggerCompactPanel({
   }
   return (
     <div className="panel eval-compact-panel">
-      <EvalPanelHeader title="Trigger Queries" meta={`${filteredTotal}/${total} 条`} onAdd={onAdd} onViewAll={onViewAll} addLabel="新增 Trigger" canViewAll={total > 0} />
+      <EvalPanelHeader title="Trigger Queries" meta={`${filteredTotal}/${total} 条`} onAdd={onAdd} onGenerate={onGenerate} onViewAll={onViewAll} addLabel="新增 Trigger" canViewAll={total > 0} />
       <TriggerFilterTabs value={filter} onChange={onFilterChange} />
       <div className="compact-eval-list">
         {items.map((item) => (
@@ -1018,6 +1076,7 @@ function EffectCompactPanel({
   filter,
   onFilterChange,
   onAdd,
+  onGenerate,
   onViewAll,
   onOpenDetail,
   onDelete,
@@ -1028,6 +1087,7 @@ function EffectCompactPanel({
   filter: EffectFilter;
   onFilterChange: (value: EffectFilter) => void;
   onAdd: () => void;
+  onGenerate: () => void;
   onViewAll: () => void;
   onOpenDetail: (item: EffectCase) => void;
   onDelete: (id: string) => void;
@@ -1035,7 +1095,7 @@ function EffectCompactPanel({
   if (!items.length) {
     return (
       <div className="panel eval-compact-panel">
-        <EvalPanelHeader title="Effect Cases" meta={`${filteredTotal}/${total} 条`} onAdd={onAdd} onViewAll={onViewAll} addLabel="新增 Case" canViewAll={total > 0} />
+        <EvalPanelHeader title="Effect Cases" meta={`${filteredTotal}/${total} 条`} onAdd={onAdd} onGenerate={onGenerate} onViewAll={onViewAll} addLabel="新增 Case" canViewAll={total > 0} />
         <EffectFilterTabs value={filter} onChange={onFilterChange} />
         <CompactEmpty title="暂无 Effect Case" description="新增 case 后，效果评测会用 prompt、expected output 和 assertions 做质量检查。" />
       </div>
@@ -1043,7 +1103,7 @@ function EffectCompactPanel({
   }
   return (
     <div className="panel eval-compact-panel">
-      <EvalPanelHeader title="Effect Cases" meta={`${filteredTotal}/${total} 条`} onAdd={onAdd} onViewAll={onViewAll} addLabel="新增 Case" canViewAll={total > 0} />
+      <EvalPanelHeader title="Effect Cases" meta={`${filteredTotal}/${total} 条`} onAdd={onAdd} onGenerate={onGenerate} onViewAll={onViewAll} addLabel="新增 Case" canViewAll={total > 0} />
       <EffectFilterTabs value={filter} onChange={onFilterChange} />
       <div className="compact-eval-list">
         {items.map((item) => (
@@ -1065,7 +1125,7 @@ function EffectCompactPanel({
   );
 }
 
-function EvalPanelHeader({ title, meta, addLabel, canViewAll, onAdd, onViewAll }: { title: string; meta: string; addLabel: string; canViewAll: boolean; onAdd: () => void; onViewAll: () => void }) {
+function EvalPanelHeader({ title, meta, addLabel, canViewAll, onAdd, onGenerate, onViewAll }: { title: string; meta: string; addLabel: string; canViewAll: boolean; onAdd: () => void; onGenerate: () => void; onViewAll: () => void }) {
   return (
     <div className="compact-panel-header">
       <div>
@@ -1074,6 +1134,7 @@ function EvalPanelHeader({ title, meta, addLabel, canViewAll, onAdd, onViewAll }
       </div>
       <div className="compact-header-actions">
         {canViewAll && <button className="btn" type="button" onClick={onViewAll}>查看全部</button>}
+        <button className="btn" type="button" onClick={onGenerate}><Sparkles size={16} />AI 生成</button>
         <button className="btn primary" type="button" onClick={onAdd}><Plus size={16} />{addLabel}</button>
       </div>
     </div>
@@ -1238,6 +1299,198 @@ function Pagination({ page, pages, onPageChange }: { page: number; pages: number
       <button className="btn" type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>上一页</button>
       <span>{page} / {pages}</span>
       <button className="btn" type="button" disabled={page >= pages} onClick={() => onPageChange(page + 1)}>下一页</button>
+    </div>
+  );
+}
+
+function GenerationStatusBar({
+  jobs,
+  onOpen,
+  onDelete,
+}: {
+  jobs: EvaluationSetGenerationJob[];
+  onOpen: (job: EvaluationSetGenerationJob) => void;
+  onDelete: (job: EvaluationSetGenerationJob) => void;
+}) {
+  const visibleJobs = jobs.filter((job) => ["queued", "running", "completed", "failed"].includes(job.status));
+  if (!visibleJobs.length) return null;
+  return (
+    <div className="generation-status-list">
+      {visibleJobs.map((job) => (
+        <div className={`generation-status-card status-${job.status}`} key={job.id}>
+          <div>
+            <strong>{job.target === "trigger_queries" ? "Trigger Queries" : "Effect Cases"} AI 生成</strong>
+            <p>{job.error || job.progress_message || generationStatusText(job.status)}</p>
+          </div>
+          <StatusPill value={job.status} />
+          <div className="row-actions">
+            {["queued", "running"].includes(job.status) && <button className="btn small" type="button" onClick={() => onOpen(job)}>查看进度</button>}
+            {job.status === "completed" && <button className="btn small primary" type="button" onClick={() => onOpen(job)}>查看生成草稿</button>}
+            {job.status === "failed" && <button className="btn small" type="button" onClick={() => onOpen(job)}>查看错误</button>}
+            <button className="icon-btn" type="button" aria-label="移除生成任务" onClick={() => onDelete(job)}><X size={15} /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function generationStatusText(status: string) {
+  if (status === "queued") return "等待后台生成。";
+  if (status === "running") return "正在生成候选草稿。";
+  if (status === "completed") return "生成完成，请审核后入库。";
+  if (status === "failed") return "生成失败。";
+  return status;
+}
+
+function GenerationJobModal({
+  target,
+  isPending,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  target: GenerationTarget;
+  isPending: boolean;
+  error?: string;
+  onClose: () => void;
+  onSubmit: (body: { target: GenerationTarget; count: number; instruction: string; include_negative?: boolean }) => void;
+}) {
+  const [form, setForm] = useState({ count: 5, instruction: "", include_negative: true });
+  const isTrigger = target === "trigger_queries";
+  return (
+    <div className="modal-backdrop">
+      <form className="modal settings-modal generation-modal" onSubmit={(event) => { event.preventDefault(); onSubmit({ target, ...form }); }}>
+        <ModalHeader
+          title={isTrigger ? "AI 生成 Trigger Queries" : "AI 生成 Effect Cases"}
+          description="生成会在后台执行，结果只作为草稿保存；确认后才会写入 Evaluation Set。"
+          onClose={onClose}
+        />
+        <label>生成数量<input type="number" min="1" max="20" value={form.count} onChange={(event) => setForm({ ...form, count: Number(event.target.value) })} required /></label>
+        <label>生成要求<textarea value={form.instruction} onChange={(event) => setForm({ ...form, instruction: event.target.value })} placeholder={isTrigger ? "默认使用中文；例如：覆盖正向、负向和边界触发场景" : "默认使用中文；例如：优先生成带 deterministic assertions 的 case"} /></label>
+        {isTrigger && <label className="switch-row"><input type="checkbox" checked={form.include_negative} onChange={(event) => setForm({ ...form, include_negative: event.target.checked })} />包含负样例</label>}
+        {error && <ErrorBox title="创建生成任务失败" messages={[error]} />}
+        <div className="modal-actions">
+          <button className="btn" type="button" onClick={onClose}>取消</button>
+          <button className="btn primary" type="submit" disabled={isPending}><Sparkles size={16} />{isPending ? "创建中" : "开始生成"}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function GenerationReviewModal({
+  jobId,
+  onClose,
+  onConfirmed,
+}: {
+  jobId: string;
+  onClose: () => void;
+  onConfirmed: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const jobQuery = useQuery({
+    queryKey: ["generation-job", jobId],
+    queryFn: () => api.generationJob(jobId),
+    refetchInterval: (query) => ["queued", "running"].includes(query.state.data?.status ?? "") ? 2000 : false,
+  });
+  const [items, setItems] = useState<GenerationDraftItem[]>([]);
+  useEffect(() => {
+    if (jobQuery.data?.draft_items) setItems(jobQuery.data.draft_items);
+  }, [jobQuery.data?.id, jobQuery.data?.draft_items]);
+  const confirm = useMutation({
+    mutationFn: () => api.confirmGenerationJob(jobId, items),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["generation-job", jobId] });
+      onConfirmed();
+    },
+  });
+  const job = jobQuery.data;
+  const selectedCount = items.filter((item) => item.selected).length;
+  return (
+    <div className="modal-backdrop">
+      <section className="modal generation-review-modal">
+        <ModalHeader
+          title={job?.target === "effect_cases" ? "审核 Effect Case 草稿" : "审核 Trigger Query 草稿"}
+          description="勾选并编辑需要入库的数据；重复项默认不勾选。"
+          onClose={onClose}
+        />
+        {jobQuery.isLoading && <Loading label="读取生成任务" />}
+        {job && ["queued", "running"].includes(job.status) && (
+          <div className="generation-waiting">
+            <Loader2 size={18} className="spin" />
+            <strong>{job.progress_message || "正在生成候选草稿"}</strong>
+          </div>
+        )}
+        {job?.status === "failed" && <ErrorBox title="生成失败" messages={[job.error || "生成任务失败。"]} />}
+        {job?.status === "completed" && (
+          <>
+            <div className="draft-toolbar">
+              <span>{selectedCount}/{items.length} 条将被保存</span>
+              <div className="row-actions">
+                <button className="btn small" type="button" onClick={() => setItems(items.map((item) => ({ ...item, selected: true })))}>全选</button>
+                <button className="btn small" type="button" onClick={() => setItems(items.map((item) => ({ ...item, selected: !item.duplicate })))}>选择非重复项</button>
+                <button className="btn small" type="button" onClick={() => setItems(items.map((item) => ({ ...item, selected: false })))}>清空选择</button>
+              </div>
+            </div>
+            <div className="draft-list">
+              {items.map((item, index) => job.target === "effect_cases" ? (
+                <EffectDraftEditor key={item.id ?? index} item={item} onChange={(next) => setItems(items.map((current, currentIndex) => currentIndex === index ? next : current))} onDelete={() => setItems(items.filter((_, currentIndex) => currentIndex !== index))} />
+              ) : (
+                <TriggerDraftEditor key={item.id ?? index} item={item} onChange={(next) => setItems(items.map((current, currentIndex) => currentIndex === index ? next : current))} onDelete={() => setItems(items.filter((_, currentIndex) => currentIndex !== index))} />
+              ))}
+            </div>
+            {confirm.error && <ErrorBox title="保存草稿失败" messages={[confirm.error.message]} />}
+            <div className="modal-actions">
+              <button className="btn" type="button" onClick={onClose}>稍后处理</button>
+              <button className="btn primary" type="button" disabled={selectedCount === 0 || confirm.isPending} onClick={() => confirm.mutate()}><Save size={16} />{confirm.isPending ? "保存中" : `确认入库 ${selectedCount} 条`}</button>
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function TriggerDraftEditor({ item, onChange, onDelete }: { item: GenerationDraftItem; onChange: (item: GenerationDraftItem) => void; onDelete: () => void }) {
+  return (
+    <div className={`draft-card ${item.duplicate ? "duplicate" : ""}`}>
+      <div className="draft-card-header">
+        <div className="draft-card-title">
+          <label className="switch-row"><input type="checkbox" checked={!!item.selected} onChange={(event) => onChange({ ...item, selected: event.target.checked })} />选中此草稿</label>
+          {item.duplicate && <StatusPill value="duplicate" label="重复" />}
+        </div>
+        <button className="icon-btn danger" type="button" aria-label="删除草稿" onClick={onDelete}><Trash2 size={16} /></button>
+      </div>
+      <div className="draft-card-grid trigger-draft-grid">
+        <label className="draft-field draft-field-main">Query<textarea value={item.query ?? ""} onChange={(event) => onChange({ ...item, query: event.target.value })} /></label>
+        <label className="draft-field draft-side-field">Expected behavior<select value={String(!!item.should_trigger)} onChange={(event) => onChange({ ...item, should_trigger: event.target.value === "true" })}>
+          <option value="true">Should trigger</option>
+          <option value="false">Should not trigger</option>
+        </select></label>
+      </div>
+      {item.rationale && <p className="draft-rationale">{item.rationale}</p>}
+    </div>
+  );
+}
+
+function EffectDraftEditor({ item, onChange, onDelete }: { item: GenerationDraftItem; onChange: (item: GenerationDraftItem) => void; onDelete: () => void }) {
+  return (
+    <div className={`draft-card effect-draft-card ${item.duplicate ? "duplicate" : ""}`}>
+      <div className="draft-card-header">
+        <div className="draft-card-title">
+          <label className="switch-row"><input type="checkbox" checked={!!item.selected} onChange={(event) => onChange({ ...item, selected: event.target.checked })} />选中此草稿</label>
+          {item.duplicate && <StatusPill value="duplicate" label="重复" />}
+        </div>
+        <button className="icon-btn danger" type="button" aria-label="删除草稿" onClick={onDelete}><Trash2 size={16} /></button>
+      </div>
+      <div className="draft-card-grid effect-draft-grid">
+        <label className="draft-field draft-side-field">Case key<input value={item.case_key ?? ""} onChange={(event) => onChange({ ...item, case_key: event.target.value })} /></label>
+        <label className="draft-field draft-field-main">Prompt<textarea value={item.prompt ?? ""} onChange={(event) => onChange({ ...item, prompt: event.target.value })} /></label>
+        <label className="draft-field">Expected output<textarea value={item.expected_output ?? ""} onChange={(event) => onChange({ ...item, expected_output: event.target.value })} /></label>
+        <label className="draft-field">Assertions<textarea value={(item.assertions ?? []).join("\n")} onChange={(event) => onChange({ ...item, assertions: event.target.value.split("\n").map((line) => line.trim()).filter(Boolean) })} /></label>
+      </div>
+      {item.rationale && <p className="draft-rationale">{item.rationale}</p>}
     </div>
   );
 }

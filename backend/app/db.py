@@ -31,7 +31,7 @@ def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if row is None:
         return None
     data = dict(row)
-    for key in ("manifest", "frontmatter", "detected_roots", "warnings", "blocking_errors", "files", "assertions", "metrics", "result_summary", "evidence_refs"):
+    for key in ("manifest", "frontmatter", "detected_roots", "warnings", "blocking_errors", "files", "assertions", "metrics", "result_summary", "evidence_refs", "request_payload", "draft_items"):
         if key in data:
             data[key] = decode_json(data[key], [] if key.endswith("s") or key in {"files", "assertions", "detected_roots", "warnings", "blocking_errors", "evidence_refs"} else {})
     return data
@@ -273,6 +273,23 @@ def init_db(db_path: Path | None = None) -> None:
               created_at TEXT NOT NULL,
               FOREIGN KEY(run_id) REFERENCES evaluation_runs(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS evaluation_set_generation_jobs (
+              id TEXT PRIMARY KEY,
+              skill_id TEXT NOT NULL,
+              eval_set_id TEXT NOT NULL,
+              target TEXT NOT NULL,
+              status TEXT NOT NULL,
+              progress_message TEXT NOT NULL DEFAULT '',
+              request_payload TEXT NOT NULL DEFAULT '{}',
+              draft_items TEXT NOT NULL DEFAULT '[]',
+              error TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              completed_at TEXT,
+              FOREIGN KEY(skill_id) REFERENCES skills(id) ON DELETE CASCADE,
+              FOREIGN KEY(eval_set_id) REFERENCES evaluation_sets(id) ON DELETE CASCADE
+            );
             """
         )
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(categories)").fetchall()}
@@ -292,6 +309,9 @@ def init_db(db_path: Path | None = None) -> None:
         model_columns = {row["name"] for row in conn.execute("PRAGMA table_info(model_api_models)").fetchall()}
         if "updated_at" not in model_columns:
             conn.execute("ALTER TABLE model_api_models ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''")
+        job_columns = {row["name"] for row in conn.execute("PRAGMA table_info(evaluation_set_generation_jobs)").fetchall()}
+        if job_columns and "progress_message" not in job_columns:
+            conn.execute("ALTER TABLE evaluation_set_generation_jobs ADD COLUMN progress_message TEXT NOT NULL DEFAULT ''")
 
 
 def seed_db(db_path: Path | None = None) -> None:

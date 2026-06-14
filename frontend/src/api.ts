@@ -16,6 +16,9 @@ import type {
   SkillFileList,
   TaskEvidenceDetail,
   TriggerQuery,
+  EvaluationSetGenerationJob,
+  GenerationDraftItem,
+  GenerationTarget,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
@@ -81,6 +84,13 @@ export const api = {
     return request<SkillFileContent>(`/api/skills/${skillId}/files/content?${params.toString()}`);
   },
   evaluationSet: (skillId: string) => request<EvaluationSet>(`/api/skills/${skillId}/evaluation-set`),
+  generationJobs: (skillId: string) => request<EvaluationSetGenerationJob[]>(`/api/skills/${skillId}/evaluation-set/generation-jobs`),
+  createGenerationJob: (skillId: string, body: { target: GenerationTarget; count: number; instruction: string; include_negative?: boolean }) =>
+    request<EvaluationSetGenerationJob>(`/api/skills/${skillId}/evaluation-set/generation-jobs`, { method: "POST", body: JSON.stringify(body) }),
+  generationJob: (id: string) => request<EvaluationSetGenerationJob>(`/api/evaluation-set-generation-jobs/${id}`),
+  confirmGenerationJob: (id: string, items: GenerationDraftItem[]) =>
+    request<{ status: string; inserted_count: number; items: unknown[] }>(`/api/evaluation-set-generation-jobs/${id}/confirm`, { method: "POST", body: JSON.stringify({ items }) }),
+  deleteGenerationJob: (id: string) => request<{ status: string }>(`/api/evaluation-set-generation-jobs/${id}`, { method: "DELETE" }),
   uploadSkillZip: (file: File) => {
     const form = new FormData();
     form.append("file", file);

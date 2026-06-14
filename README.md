@@ -5,7 +5,7 @@
 - `backend/`：FastAPI + SQLite + 本地文件存储的真实 API 服务。
 - `frontend/`：Vite React TypeScript 前端。
 - `prototypes/style-lab/`：前期高保真原型，仅作为视觉与交互参考。
-- `docs/`：产品与系统设计文档。
+- `docs/`：当前系统设计文档，历史产品讨论稿已归档到 `docs/archive/`。
 
 ## 本地启动
 
@@ -37,5 +37,17 @@ npm run dev
 4. 系统创建 Skill、Skill Version 和 Skill 绑定的当前 Evaluation Set。
 5. 在 Skill 的 Evaluation Set 页面维护 Trigger Queries 与 Effect Cases。
 6. 在 `评测任务管理` 创建 Full Evaluation 任务。
-7. 模拟 worker 生成四阶段结果、overall_score、suggestions 和评测证据。
-8. Overview 按 category 展示 Top 10 Skills by Category。
+7. Evaluator 执行真实 Scan、Trigger、Effect，并生成结构化证据与运行产物。
+8. Overview 按 category 展示 Recommended Skills by Category。
+
+## 当前评测模型
+
+SkillsEval 当前按三类指标展示，不再把新任务合并为一个加权总分：
+
+- `Scan`：静态规则扫描，输出风险、findings 和 scan score。
+- `Trigger`：在配置的 Runner 下真实运行 trigger queries，判断 Skill 是否按预期触发。
+- `Effect`：运行 with-skill 与 baseline，对 assertions 做确定性判定和 LLM Judge 判定，并展示质量提升与成本效率证据。
+
+Runner 是被测运行环境；Effect Judge 使用 `系统设置` 中配置的全局裁判模型，不使用 Runner 里的模型作为裁判。
+
+系统设计入口见 `docs/README.md`。

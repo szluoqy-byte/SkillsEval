@@ -135,6 +135,37 @@ export type EffectCase = {
   assertions: string[];
 };
 
+export type GenerationTarget = "trigger_queries" | "effect_cases";
+
+export type GenerationDraftItem = {
+  id?: string;
+  selected?: boolean;
+  duplicate?: boolean;
+  rationale?: string;
+  query?: string;
+  should_trigger?: boolean;
+  case_key?: string;
+  prompt?: string;
+  expected_output?: string;
+  files?: string[];
+  assertions?: string[];
+};
+
+export type EvaluationSetGenerationJob = {
+  id: string;
+  skill_id: string;
+  eval_set_id: string;
+  target: GenerationTarget;
+  status: "queued" | "running" | "completed" | "failed" | "confirmed" | string;
+  progress_message: string;
+  request_payload: Record<string, unknown>;
+  draft_items: GenerationDraftItem[];
+  error: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+};
+
 export type EvaluationSet = {
   id: string;
   skill_id: string;
@@ -143,6 +174,7 @@ export type EvaluationSet = {
   status: string;
   trigger_queries: TriggerQuery[];
   effect_cases: EffectCase[];
+  generation_jobs?: EvaluationSetGenerationJob[];
 };
 
 export type EvaluationTask = {
