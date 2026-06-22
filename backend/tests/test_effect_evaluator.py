@@ -56,6 +56,8 @@ def test_deterministic_assertions_cover_core_dsl(tmp_path):
     assert deterministic_grade('file contains out.txt "hello"', output, workspace, [], "sample-skill", False)["passed"]
     assert deterministic_grade("tool called bash", output, workspace, [{"name": "bash"}], "sample-skill", False)["passed"]
     assert deterministic_grade("skill invoked sample-skill", output, workspace, [], "sample-skill", True)["passed"]
+    assert deterministic_grade('contains "missing" or contains "demo"', output, workspace, [], "sample-skill", False)["passed"]
+    assert not deterministic_grade('contains "missing" or contains "absent"', output, workspace, [], "sample-skill", False)["passed"]
 
 
 def test_effect_eval_scores_with_skill_lift_and_cost_metrics(tmp_path):
@@ -108,6 +110,7 @@ def test_effect_eval_uses_external_workspace_when_provided(tmp_path):
     )
 
     assert result["status"] == "completed"
+    assert (workspace_root / "_skill_cache" / ".opencode" / "skills" / "sample-skill" / "SKILL.md").exists()
     assert (workspace_root / "case-1" / "with_skill" / "workspace" / ".opencode" / "skills" / "sample-skill" / "SKILL.md").exists()
     assert not (run_root / "effect" / "case-1" / "with_skill" / "workspace").exists()
 

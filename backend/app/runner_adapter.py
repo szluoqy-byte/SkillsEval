@@ -53,6 +53,7 @@ def run_prompt(
     artifact_root: str | None = None,
     skill_name: str = "",
     load_skill: bool = False,
+    skill_source_root: Path | None = None,
 ) -> dict[str, Any]:
     command_path, model_name, timeout_seconds = require_opencode_runner(runner)
     return opencode_runner.run_opencode_prompt(
@@ -66,4 +67,5 @@ def run_prompt(
         artifact_root=artifact_root,
         skill_name=skill_name,
         load_skill=load_skill,
+        skill_source_root=skill_source_root,
     )

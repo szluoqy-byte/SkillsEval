@@ -45,6 +45,7 @@ def isolated_storage(tmp_path, monkeypatch):
     import app.evaluator as evaluator
 
     monkeypatch.setattr(evaluator, "RUN_DIR", tmp_path / "runs")
+    monkeypatch.setattr(evaluator, "WORKSPACE_DIR", tmp_path / "workspaces")
     init_db(db.DB_PATH)
     seed_db(db.DB_PATH)
     with db.connect() as conn:
@@ -349,3 +350,105 @@ def test_skill_and_task_lists_do_not_duplicate_after_multiple_runs():
     assert rerun_rows[0]["result_summary"]["trigger_score"] == 62
     assert len(rerun_task_rows) == 1
     assert rerun_task_rows[0]["recommendation"] == "not_recommended"
+
+
+def test_delete_completed_task_cascades_data_and_cleans_artifacts(tmp_path):
+    import app.evaluator as evaluator
+
+    draft = importer.create_import_draft(
+        "delete-task.zip",
+        make_zip({"delete-task/SKILL.md": "---\nname: delete-task\ndescription: Delete task skill.\n---\nUse for delete task checks.\n"}),
+    )
+    skill = importer.confirm_import_draft(draft["id"], "delete-task", "1.0.0", "Developer Tools")
+
+    with db.connect() as conn:
+        runner = conn.execute("SELECT * FROM runner_environments LIMIT 1").fetchone()
+        eval_set = conn.execute("SELECT * FROM evaluation_sets WHERE skill_id = ?", (skill["id"],)).fetchone()
+        conn.execute(
+            "INSERT INTO trigger_queries (id, eval_set_id, query, should_trigger, created_at, updated_at) VALUES ('trq_delete', ?, 'please trigger delete-task skill', 1, 'now', 'now')",
+            (eval_set["id"],),
+        )
+
+    completed = run_task(create_task(skill["id"], skill["latest_version"]["id"], runner["id"])["id"])
+    run_id = completed["run"]["id"]
+    run_root = evaluator.RUN_DIR / run_id
+    workspace_root = evaluator.WORKSPACE_DIR / run_id
+
+    assert run_root.exists()
+    assert workspace_root.exists()
+
+    response = TestClient(app).delete(f"/api/tasks/{completed['id']}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {"status": "deleted", "id": completed["id"], "deleted_runs": 1, "cleanup_errors": []}
+    assert not run_root.exists()
+    assert not workspace_root.exists()
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM evaluation_tasks WHERE id = ?", (completed["id"],)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM evaluation_runs WHERE task_id = ?", (completed["id"],)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM stage_results WHERE run_id = ?", (run_id,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM findings WHERE run_id = ?", (run_id,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM suggestions WHERE run_id = ?", (run_id,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM evidence_items WHERE run_id = ?", (run_id,)).fetchone()[0] == 0
+
+
+def test_delete_task_rejects_missing_and_running_tasks():
+    draft = importer.create_import_draft(
+        "delete-running.zip",
+        make_zip({"delete-running/SKILL.md": "---\nname: delete-running\ndescription: Delete running skill.\n---\nUse for delete checks.\n"}),
+    )
+    skill = importer.confirm_import_draft(draft["id"], "delete-running", "1.0.0", "Developer Tools")
+    with db.connect() as conn:
+        runner = conn.execute("SELECT * FROM runner_environments LIMIT 1").fetchone()
+    task = create_task(skill["id"], skill["latest_version"]["id"], runner["id"])
+    client = TestClient(app)
+
+    missing = client.delete("/api/tasks/task_missing")
+    queued = client.delete(f"/api/tasks/{task['id']}")
+    with db.connect() as conn:
+        conn.execute("UPDATE evaluation_tasks SET status = 'running' WHERE id = ?", (task["id"],))
+    running = client.delete(f"/api/tasks/{task['id']}")
+
+    assert missing.status_code == 404
+    assert queued.status_code == 409
+    assert running.status_code == 409
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM evaluation_tasks WHERE id = ?", (task["id"],)).fetchone()[0] == 1
+
+
+def test_delete_task_reports_unsafe_artifact_cleanup_path(tmp_path):
+    import app.evaluator as evaluator
+
+    draft = importer.create_import_draft(
+        "delete-unsafe.zip",
+        make_zip({"delete-unsafe/SKILL.md": "---\nname: delete-unsafe\ndescription: Delete unsafe skill.\n---\nUse for delete checks.\n"}),
+    )
+    skill = importer.confirm_import_draft(draft["id"], "delete-unsafe", "1.0.0", "Developer Tools")
+    with db.connect() as conn:
+        runner = conn.execute("SELECT * FROM runner_environments LIMIT 1").fetchone()
+    task = create_task(skill["id"], skill["latest_version"]["id"], runner["id"])
+    unsafe_root = tmp_path / "outside-run-root"
+    unsafe_root.mkdir()
+    (unsafe_root / "keep.txt").write_text("keep", encoding="utf-8")
+    workspace_root = evaluator.WORKSPACE_DIR / "run_unsafe"
+    workspace_root.mkdir(parents=True)
+    with db.connect() as conn:
+        conn.execute("UPDATE evaluation_tasks SET status = 'completed' WHERE id = ?", (task["id"],))
+        conn.execute(
+            """
+            INSERT INTO evaluation_runs
+              (id, task_id, status, current_stage, artifact_root, created_at, started_at, finished_at)
+            VALUES ('run_unsafe', ?, 'completed', 'done', ?, 'now', 'now', 'now')
+            """,
+            (task["id"], str(unsafe_root)),
+        )
+
+    response = TestClient(app).delete(f"/api/tasks/{task['id']}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["deleted_runs"] == 1
+    assert payload["cleanup_errors"]
+    assert unsafe_root.exists()
+    assert not workspace_root.exists()

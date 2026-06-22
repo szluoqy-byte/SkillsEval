@@ -8,6 +8,7 @@ from typing import Any
 
 from .model_client import call_configured_model, get_role_model
 from .runner_adapter import run_prompt
+from .opencode_runner import prepare_skill_cache
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -50,9 +51,46 @@ def json_path_lookup(payload: Any, path: str) -> tuple[bool, Any]:
     return True, current
 
 
+DETERMINISTIC_ASSERTION_PREFIXES = (
+    "contains ",
+    "does not contain ",
+    "starts with ",
+    "ends with ",
+    "matches regex ",
+    "matches pattern ",
+    "has at least ",
+    "is valid json",
+    "output is valid json",
+    "json path ",
+    "file exists ",
+    "file contains ",
+    "tool called ",
+    "skill invoked ",
+)
+
+
+def looks_deterministic_assertion(text: str) -> bool:
+    clean = text.strip().lower()
+    return any(clean.startswith(prefix) for prefix in DETERMINISTIC_ASSERTION_PREFIXES)
+
+
 def deterministic_grade(assertion: str, output: str, workspace: Path, tool_calls: list[dict[str, Any]], skill_name: str, skill_invoked: bool) -> dict[str, Any] | None:
     raw = assertion.strip()
     lower = raw.lower()
+
+    or_parts = re.split(r"\s+or\s+", raw, flags=re.IGNORECASE)
+    if len(or_parts) >= 2 and all(looks_deterministic_assertion(part) for part in or_parts):
+        branch_results: list[dict[str, Any]] = []
+        for part in or_parts:
+            result = deterministic_grade(part.strip(), output, workspace, tool_calls, skill_name, skill_invoked)
+            if result is None:
+                continue
+            branch_results.append(result)
+            if result["passed"]:
+                return assertion_result(raw, True, f"OR satisfied by: {part.strip()} - {result['evidence']}")
+        if branch_results:
+            evidence = "; ".join(f"{part.strip()}: {result['evidence']}" for part, result in zip(or_parts, branch_results))
+            return assertion_result(raw, False, f"No OR branch satisfied - {evidence}")
 
     contains = re.match(r"^contains\s+(.+)$", raw, re.IGNORECASE)
     if contains:
@@ -352,6 +390,7 @@ def run_effect_case_configuration(
     skill_name: str,
     case_root: Path,
     workspace_root: Path,
+    skill_source_root: Path | None = None,
 ) -> dict[str, Any]:
     run_root = case_root / configuration
     workspace = workspace_root / configuration / "workspace"
@@ -365,6 +404,7 @@ def run_effect_case_configuration(
         artifact_root=artifact_root,
         skill_name=skill_name,
         load_skill=configuration == "with_skill",
+        skill_source_root=skill_source_root if configuration == "with_skill" else None,
     )
     write_text(run_root / "response.txt", run.get("response") or "")
     metrics = {
@@ -446,6 +486,8 @@ def run_effect_eval(
         write_json(effect_root / "report.json", report)
         return report
 
+    skill_source_root = prepare_skill_cache(Path(artifact_root), workspace_base, skill_name)
+
     for index, case in enumerate(effect_cases, start=1):
         key = case.get("case_key") or case.get("id") or f"case-{index}"
         case_root = effect_root / str(key)
@@ -466,6 +508,7 @@ def run_effect_eval(
             skill_name=skill_name,
             case_root=case_root,
             workspace_root=workspace_base / str(key),
+            skill_source_root=skill_source_root,
         )
         without_skill = run_effect_case_configuration(
             runner=runner,

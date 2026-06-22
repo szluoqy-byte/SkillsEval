@@ -158,6 +158,10 @@ function triggerScoreFromSummary(summary: Record<string, unknown> | undefined) {
   return numberFromSummary(summary, "trigger_score");
 }
 
+function canDeleteTask(task?: EvaluationTask | null) {
+  return !!task && !["queued", "running"].includes(task.status);
+}
+
 function effectStatusFromSummary(summary: Record<string, unknown> | undefined) {
   return stringFromSummary(summary, "effect_status") ?? "pending";
 }
@@ -1583,7 +1587,18 @@ function EffectCaseModal({
 
 function TasksPage() {
   const [open, setOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<EvaluationTask | null>(null);
+  const queryClient = useQueryClient();
   const tasks = useQuery({ queryKey: ["tasks"], queryFn: api.tasks, refetchInterval: 5000 });
+  const deleteTask = useMutation({
+    mutationFn: (id: string) => api.deleteTask(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["overview"] });
+      queryClient.invalidateQueries({ queryKey: ["skills"] });
+      setDeleteTarget(null);
+    },
+  });
   return (
     <Shell>
       <PageHeader
@@ -1595,20 +1610,36 @@ function TasksPage() {
       <section className="panel">
         {tasks.isLoading ? <Loading /> : tasks.data?.length ? (
           <div className="table">
-            <div className="table-row table-head"><span>Task</span><span>Skill</span><span>Runner</span><span>Status</span><span>Trigger</span></div>
+            <div className="table-row table-head task-table-head"><span>Task</span><span>Skill</span><span>Runner</span><span>Status</span><span>Trigger</span><span></span></div>
             {tasks.data.map((task, index) => (
-              <Link className="table-row" to={`/tasks/${task.id}`} key={`${task.id}-${index}`}>
-                <strong>{task.id}</strong>
-                <span>{task.skill_name}</span>
-                <span>{task.runner_name}</span>
-                <StatusPill value={task.status} />
-                <CompactScore value={triggerScoreFromSummary(task.result_summary)} />
-              </Link>
+              <div className="table-row task-table-row" key={`${task.id}-${index}`}>
+                <Link className="task-row-link" to={`/tasks/${task.id}`}>
+                  <strong>{task.id}</strong>
+                  <span>{task.skill_name}</span>
+                  <span>{task.runner_name}</span>
+                  <StatusPill value={task.status} />
+                  <CompactScore value={triggerScoreFromSummary(task.result_summary)} />
+                </Link>
+                {canDeleteTask(task) ? (
+                  <button className="icon-btn danger" type="button" aria-label={`删除 ${task.id}`} onClick={() => setDeleteTarget(task)}><Trash2 size={16} /></button>
+                ) : (
+                  <button className="icon-btn" type="button" aria-label="运行中的任务不可删除" disabled><Trash2 size={16} /></button>
+                )}
+              </div>
             ))}
           </div>
         ) : <EmptyState title="暂无评测任务" description="上传 Skill 后可以创建完整评测任务。" />}
       </section>
       {open && <CreateTaskModal onClose={() => setOpen(false)} />}
+      {deleteTarget && (
+        <DeleteTaskConfirmModal
+          task={deleteTarget}
+          error={deleteTask.error?.message}
+          isPending={deleteTask.isPending}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => deleteTask.mutate(deleteTarget.id)}
+        />
+      )}
     </Shell>
   );
 }
@@ -1657,21 +1688,79 @@ function CreateTaskModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function DeleteTaskConfirmModal({
+  task,
+  error,
+  isPending,
+  onCancel,
+  onConfirm,
+}: {
+  task: EvaluationTask;
+  error?: string;
+  isPending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <section className="modal settings-modal">
+        <div className="modal-header">
+          <div>
+            <h2>删除评测任务</h2>
+            <p>此操作会删除任务、评测报告、证据记录、运行产物和临时工作区。</p>
+          </div>
+          <button className="icon-btn" type="button" onClick={onCancel}><X size={18} /></button>
+        </div>
+        <div className="delete-summary">
+          <span>Task</span><strong>{task.id}</strong>
+          <span>Skill</span><strong>{task.skill_name ?? task.skill_id}</strong>
+          <span>Runner</span><strong>{task.runner_name ?? task.runner_environment_id}</strong>
+        </div>
+        {error && <ErrorBox title="删除失败" messages={[error]} />}
+        <div className="modal-actions">
+          <button className="btn" type="button" onClick={onCancel} disabled={isPending}>取消</button>
+          <button className="btn danger" type="button" onClick={onConfirm} disabled={isPending}><Trash2 size={16} />{isPending ? "删除中" : "确认删除"}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function TaskDetailPage() {
   const { taskId = "" } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<EvaluationTask | null>(null);
   const task = useQuery({ queryKey: ["task", taskId], queryFn: () => api.task(taskId), enabled: !!taskId, refetchInterval: 3000 });
   const runNow = useMutation({
     mutationFn: () => api.runTaskNow(taskId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["task", taskId] }),
   });
+  const deleteTask = useMutation({
+    mutationFn: (id: string) => api.deleteTask(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["overview"] });
+      queryClient.invalidateQueries({ queryKey: ["skills"] });
+      navigate("/tasks");
+    },
+  });
   return (
     <Shell>
+      {deleteTarget && (
+        <DeleteTaskConfirmModal
+          task={deleteTarget}
+          error={deleteTask.error?.message}
+          isPending={deleteTask.isPending}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => deleteTask.mutate(deleteTarget.id)}
+        />
+      )}
       <PageHeader
         eyebrow="Evaluation Report"
         title={task.data?.id ?? "评测任务详情"}
         description={`${task.data?.skill_name ?? ""} ${task.data?.version ? `· v${task.data.version}` : ""}`}
-        actions={<><BackLink to="/tasks">返回评测任务管理</BackLink>{task.data?.status !== "completed" && <button className="btn primary" onClick={() => runNow.mutate()}><Activity size={17} />Run now</button>}</>}
+        actions={<><BackLink to="/tasks">返回评测任务管理</BackLink>{task.data?.status !== "completed" && <button className="btn primary" onClick={() => runNow.mutate()}><Activity size={17} />Run now</button>}{canDeleteTask(task.data) && <button className="btn danger" type="button" onClick={() => setDeleteTarget(task.data ?? null)}><Trash2 size={16} />删除</button>}</>}
       />
       {task.isLoading ? <Loading /> : task.data ? <TaskReport task={task.data} /> : <EmptyState title="任务不存在" description="请返回任务列表重新选择。" />}
     </Shell>

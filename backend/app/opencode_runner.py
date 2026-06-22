@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
+
+SUBPROCESS_TEXT_ENCODING = "utf-8"
 
 
 def text_payload(value: str | bytes | None) -> str:
@@ -16,11 +20,48 @@ def text_payload(value: str | bytes | None) -> str:
     return value
 
 
-def copy_skill_to_workspace(artifact_root: Path, workspace: Path, skill_name: str) -> Path:
+def link_or_copytree(source: Path, destination: Path) -> None:
+    if destination.exists() or destination.is_symlink():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if os.name == "nt":
+            completed = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(destination), str(source)],
+                text=True,
+                encoding=SUBPROCESS_TEXT_ENCODING,
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+            if completed.returncode == 0:
+                return
+        else:
+            destination.symlink_to(source, target_is_directory=True)
+            return
+    except OSError:
+        pass
+    shutil.copytree(source, destination, dirs_exist_ok=True)
+
+
+def prepare_skill_cache(artifact_root: Path, workspace_base: Path, skill_name: str) -> Path:
+    skill_cache = workspace_base / "_skill_cache" / ".opencode" / "skills" / skill_name
+    if not skill_cache.exists():
+        shutil.copytree(artifact_root, skill_cache, dirs_exist_ok=True)
+    return skill_cache
+
+
+def copy_skill_to_workspace(artifact_root: Path, workspace: Path, skill_name: str, skill_source_root: Path | None = None) -> Path:
     skill_dir = workspace / ".opencode" / "skills" / skill_name
-    skill_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(artifact_root, skill_dir, dirs_exist_ok=True)
+    source = skill_source_root or artifact_root
+    link_or_copytree(source, skill_dir)
     return skill_dir
+
+
+def command_args(command: Path, *args: str) -> list[str]:
+    if command.suffix.lower() == ".py":
+        return [sys.executable, str(command), *args]
+    return [str(command), *args]
 
 
 def event_tool_name(event: dict[str, Any]) -> str:
@@ -188,6 +229,7 @@ def run_opencode_prompt(
     artifact_root: str | None = None,
     skill_name: str = "",
     load_skill: bool = False,
+    skill_source_root: Path | None = None,
 ) -> dict[str, Any]:
     started = time.monotonic()
     command = Path(command_path)
@@ -220,10 +262,10 @@ def run_opencode_prompt(
 
     try:
         if load_skill and artifact_root and skill_name:
-            copy_skill_to_workspace(Path(artifact_root), workspace, skill_name)
+            copy_skill_to_workspace(Path(artifact_root), workspace, skill_name, skill_source_root)
         completed = subprocess.run(
-            [
-                str(command),
+            command_args(
+                command,
                 "run",
                 "--format",
                 "json",
@@ -232,9 +274,11 @@ def run_opencode_prompt(
                 "--dir",
                 str(workspace),
                 prompt,
-            ],
+            ),
             cwd=workspace,
             text=True,
+            encoding=SUBPROCESS_TEXT_ENCODING,
+            errors="replace",
             capture_output=True,
             timeout=max(1, int(timeout_seconds)),
             check=False,
@@ -270,6 +314,7 @@ def run_trigger_query(
     workspace: Path,
     stdout_path: Path,
     stderr_path: Path,
+    skill_source_root: Path | None = None,
 ) -> dict[str, Any]:
     started = time.monotonic()
     command = Path(command_path)
@@ -294,10 +339,10 @@ def run_trigger_query(
         return result
 
     try:
-        copy_skill_to_workspace(Path(artifact_root), workspace, skill_name)
+        copy_skill_to_workspace(Path(artifact_root), workspace, skill_name, skill_source_root)
         completed = subprocess.run(
-            [
-                str(command),
+            command_args(
+                command,
                 "run",
                 "--format",
                 "json",
@@ -306,9 +351,11 @@ def run_trigger_query(
                 "--dir",
                 str(workspace),
                 query,
-            ],
+            ),
             cwd=workspace,
             text=True,
+            encoding=SUBPROCESS_TEXT_ENCODING,
+            errors="replace",
             capture_output=True,
             timeout=max(1, int(timeout_seconds)),
             check=False,
@@ -349,6 +396,7 @@ def run_trigger_eval(
     if not model_name:
         raise ValueError("Runner model_name is required.")
     timeout_seconds = int(runner.get("timeout_seconds") or 60)
+    skill_source_root = prepare_skill_cache(Path(artifact_root), workspace_base, skill_name)
 
     for index, item in enumerate(trigger_queries, start=1):
         query_id = item.get("id") or f"query-{index}"
@@ -363,6 +411,7 @@ def run_trigger_eval(
             workspace=workspace_base / str(query_id),
             stdout_path=trigger_root / "logs" / f"{query_id}.stdout.jsonl",
             stderr_path=trigger_root / "logs" / f"{query_id}.stderr.log",
+            skill_source_root=skill_source_root,
         )
         result["query_id"] = query_id
         results.append(result)

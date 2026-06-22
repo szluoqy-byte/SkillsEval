@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from .static_scanner import dumps_artifact, scan_skill_version
 
 
 STAGES = ["static_scan", "trigger_eval", "effect_eval"]
+NON_DELETABLE_TASK_STATUSES = {"queued", "running"}
 
 
 def new_id(prefix: str) -> str:
@@ -35,6 +37,55 @@ def evidence_record(run_id: str, evidence_type: str, name: str, path: Path) -> t
         path.stat().st_size,
         now_iso(),
     )
+
+
+def cleanup_path_if_safe(path: Path, allowed_root: Path) -> str | None:
+    resolved_root = allowed_root.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError:
+        return f"Skipped unsafe cleanup path outside {resolved_root}: {resolved_path}"
+    if not resolved_path.exists():
+        return None
+    try:
+        if resolved_path.is_dir():
+            shutil.rmtree(resolved_path)
+        else:
+            resolved_path.unlink()
+    except OSError as error:
+        return f"Failed to clean {resolved_path}: {error}"
+    return None
+
+
+def delete_task(task_id: str) -> dict[str, Any]:
+    with connect() as conn:
+        task = conn.execute("SELECT * FROM evaluation_tasks WHERE id = ?", (task_id,)).fetchone()
+        if not task:
+            raise KeyError("Task not found.")
+        if str(task["status"]) in NON_DELETABLE_TASK_STATUSES:
+            raise RuntimeError("Queued or running tasks cannot be deleted.")
+        runs = rows_to_dicts(conn.execute("SELECT id, artifact_root FROM evaluation_runs WHERE task_id = ?", (task_id,)).fetchall())
+        artifact_paths = [Path(str(run["artifact_root"])) for run in runs if run.get("artifact_root")]
+        workspace_paths = [WORKSPACE_DIR / str(run["id"]) for run in runs]
+        conn.execute("DELETE FROM evaluation_tasks WHERE id = ?", (task_id,))
+
+    cleanup_errors: list[str] = []
+    for path in artifact_paths:
+        error = cleanup_path_if_safe(path, RUN_DIR)
+        if error:
+            cleanup_errors.append(error)
+    for path in workspace_paths:
+        error = cleanup_path_if_safe(path, WORKSPACE_DIR)
+        if error:
+            cleanup_errors.append(error)
+
+    return {
+        "status": "deleted",
+        "id": task_id,
+        "deleted_runs": len(runs),
+        "cleanup_errors": cleanup_errors,
+    }
 
 
 def recommendation_for(

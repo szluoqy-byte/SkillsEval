@@ -108,6 +108,7 @@ export const api = {
   createTask: (body: { skill_id: string; skill_version_id: string; runner_environment_id: string }) =>
     request<EvaluationTask>("/api/tasks", { method: "POST", body: JSON.stringify(body) }),
   runTaskNow: (id: string) => request<EvaluationTask>(`/api/tasks/${id}/run-now`, { method: "POST" }),
+  deleteTask: (id: string) => request<{ status: string; id: string; deleted_runs: number; cleanup_errors: string[] }>(`/api/tasks/${id}`, { method: "DELETE" }),
   task: (id: string) => request<EvaluationTask>(`/api/tasks/${id}`),
   taskEvidenceDetail: (id: string) => request<TaskEvidenceDetail>(`/api/tasks/${id}/evidence-detail`),
   reviewScanFinding: (taskId: string, findingId: string, body: { review_severity: string; review_note?: string }) =>

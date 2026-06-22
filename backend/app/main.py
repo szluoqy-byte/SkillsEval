@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from .db import connect, encode_json, init_db, now_iso, row_to_dict, rows_to_dicts, seed_db
 from .eval_generation import confirm_generation_job, create_generation_job, delete_generation_job, get_job, list_jobs_for_skill, run_generation_job
-from .evaluator import create_task, recommendation_for, run_task
+from .evaluator import create_task, delete_task, recommendation_for, run_task
 from .importer import confirm_import_draft, create_import_draft, get_import_draft, new_id
 from .model_client import PROVIDER_TYPES, call_configured_model, normalize_base_url, sanitize_provider
 from .static_scanner import scan_status, static_score, summarize
@@ -1177,6 +1177,16 @@ def task_detail(task_id: str) -> dict[str, Any]:
     if not task:
         raise HTTPException(status_code=404, detail="Task not found.")
     return task
+
+
+@app.delete("/api/tasks/{task_id}")
+def delete_evaluation_task(task_id: str) -> dict[str, Any]:
+    try:
+        return delete_task(task_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=error.args[0] if error.args else "Task not found.") from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @app.get("/api/tasks/{task_id}/evidence-detail")
